@@ -9,9 +9,51 @@ const BASE =
   (typeof window !== "undefined" && window.MYSPOT_API_BASE) ||
   "";
 
+// First-failure flag — once any API call returns 404 (or fails to connect),
+// show a banner so the user understands why nothing's loading.
+let _backendOfflineNotified = false;
+function notifyOffline(reason) {
+  if (_backendOfflineNotified) return;
+  _backendOfflineNotified = true;
+  // Defer so the DOM is ready when the very first fetch fails.
+  queueMicrotask(() => showOfflineBanner(reason));
+}
+
+function showOfflineBanner(reason) {
+  if (document.getElementById("backend-offline-banner")) return;
+  const div = document.createElement("div");
+  div.id = "backend-offline-banner";
+  div.className = "backend-offline-banner";
+  const baseLabel = BASE ? `at <code>${BASE}</code>` : "(same-origin)";
+  div.innerHTML = `
+    <strong>Backend unreachable ${baseLabel}.</strong>
+    <span>${reason}</span>
+    <span class="muted small">
+      The UI loads but no songs / channels / smart-tags can show without a
+      backend. Run <code>python -m backend.app</code> locally, or set
+      <code>window.MYSPOT_API_BASE</code> (or <code>?api=URL</code>) to a
+      reachable backend (e.g. a Cloudflare tunnel).
+    </span>
+    <button type="button" id="backend-banner-close" aria-label="Close">×</button>
+  `;
+  document.body.append(div);
+  div.querySelector("#backend-banner-close").onclick = () => div.remove();
+}
+
 async function req(path, opts = {}) {
-  const r = await fetch(BASE + path, opts);
+  let r;
+  try {
+    r = await fetch(BASE + path, opts);
+  } catch (e) {
+    // Network error / DNS / CORS preflight failure — usually means backend
+    // isn't running or its URL is wrong.
+    notifyOffline(`Cannot connect (${e.message || "network error"}).`);
+    throw e;
+  }
   if (!r.ok) {
+    if (r.status === 404 && path.startsWith("/api/")) {
+      notifyOffline(`Returned 404 — backend isn't serving ${path}.`);
+    }
     const text = await r.text().catch(() => "");
     throw new Error(`${r.status} ${r.statusText}: ${text || path}`);
   }
