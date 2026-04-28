@@ -22,9 +22,18 @@ const IMAGE_TOOLS = [
 
 const _state = new Map();
 function stateFor(song) {
-  if (!_state.has(song.id)) _state.set(song.id, { promptValue: "", imagePromptValue: "", lastInspireSource: null });
+  if (!_state.has(song.id)) _state.set(song.id, {
+    promptValue: "", imagePromptValue: "", lastInspireSource: null,
+    aspect: "square",
+  });
   return _state.get(song.id);
 }
+
+const ASPECTS = [
+  { id: "square",    label: "1:1",  title: "Square (default)" },
+  { id: "portrait",  label: "9:16", title: "Portrait" },
+  { id: "landscape", label: "16:9", title: "Landscape" },
+];
 
 export async function renderGenerate(body, song) {
   clear(body);
@@ -58,8 +67,31 @@ export async function renderGenerate(body, song) {
   const autoBtn = el("button", { class: "btn big auto-btn", type: "button",
     title: "Enhance prompt (free Gemini) then generate 4 images (free Pollinations) — all free, one click" },
     "🚀 Auto (free pipeline)");
-  hero.append(el("div", { class: "hero-row" }, tool, goBtn));
-  hero.append(el("div", { class: "hero-row hero-row-2" }, go4Btn, autoBtn));
+  // Layout:
+  //   row 1: tool dropdown (full width)
+  //   row 2: Generate 1 + Generate 4 (paired primary actions)
+  //   row 3: Auto free pipeline (its own row, distinct CTA)
+  hero.append(el("div", { class: "hero-row" }, tool));
+  hero.append(el("div", { class: "hero-row hero-row-buttons" }, goBtn, go4Btn));
+  hero.append(el("div", { class: "hero-row hero-row-auto" }, autoBtn));
+
+  // Aspect ratio toggle — default square (1:1)
+  const aspectRow = el("div", { class: "aspect-row" });
+  aspectRow.append(el("span", { class: "aspect-label" }, "Aspect"));
+  const aspectGroup = el("div", { class: "aspect-group", role: "radiogroup" });
+  for (const a of ASPECTS) {
+    const b = el("button", {
+      type: "button", class: "aspect-btn", "data-aspect": a.id, title: a.title,
+    }, a.label);
+    if (a.id === state.aspect) b.classList.add("active");
+    b.onclick = () => {
+      state.aspect = a.id;
+      aspectGroup.querySelectorAll(".aspect-btn").forEach((x) => x.classList.toggle("active", x.dataset.aspect === a.id));
+    };
+    aspectGroup.append(b);
+  }
+  aspectRow.append(aspectGroup);
+  hero.append(aspectRow);
 
   autoBtn.onclick = async () => {
     autoBtn.disabled = true; goBtn.disabled = true; go4Btn.disabled = true;
@@ -94,7 +126,7 @@ export async function renderGenerate(body, song) {
       const av = !!health.tools?.[t]?.available;
       if (!av) { toast("Pick another tool — this one needs a key."); return; }
     }
-    const promptText = (state.promptValue || buildSeedPrompt(song)).trim();
+    const promptText = (state.promptValue || buildSeedPrompt(song, state.aspect)).trim();
     goBtn.disabled = true; go4Btn.disabled = true;
     let done = 0;
     let failed = 0;
@@ -108,7 +140,7 @@ export async function renderGenerate(body, song) {
     const isFree = t.startsWith("pollinations");
     const tasks = Array.from({ length: times }, () => async () => {
       try {
-        const r = await api.generateGen(song.id, t, promptText);
+        const r = await api.generateGen(song.id, t, promptText, state.aspect);
         if (r.error) failed++; else done++;
       } catch { failed++; }
       updateStatus();
@@ -132,9 +164,9 @@ export async function renderGenerate(body, song) {
 
   body.append(hero);
 
-  // ============ Advanced (collapsed by default) ============
-  const adv = el("details", { class: "gen-advanced" });
-  const sum = el("summary", {}, "▸ Advanced — write your own prompt, use image inspiration, queue, export");
+  // ============ Advanced (open by default) ============
+  const adv = el("details", { class: "gen-advanced", open: true });
+  const sum = el("summary", {}, "▾ Advanced — write your own prompt, use image inspiration, queue, export");
   adv.append(sum);
 
   // -- Prompt subsection
@@ -227,13 +259,27 @@ export async function renderGenerate(body, song) {
   inspireSection.append(el("p", { class: "muted small", style: "margin: -4px 0 8px" },
     "Drop or link an image — Gemini Vision describes it so the next prompt recreates that aesthetic."));
 
-  const inspireDrop = el("div", { class: "inspire-drop" }, "Drop an image here, or click to pick.");
+  const inspireDrop = el("div", { class: "inspire-drop" },
+    "Drop an image here, drag from the media tray, or click to pick.");
   const inspireFileInp = el("input", { type: "file", accept: "image/*", style: "display:none" });
   inspireDrop.onclick = () => inspireFileInp.click();
   inspireDrop.ondragover = (e) => { e.preventDefault(); inspireDrop.classList.add("drag"); };
   inspireDrop.ondragleave = () => inspireDrop.classList.remove("drag");
   inspireDrop.ondrop = async (e) => {
     e.preventDefault(); inspireDrop.classList.remove("drag");
+    // Tray-tile drag (from media tray): fetch the asset URL as a blob
+    const trayPayload = e.dataTransfer?.getData("application/x-myspot-tray");
+    if (trayPayload) {
+      try {
+        const { src, kind } = JSON.parse(trayPayload);
+        if (kind && kind !== "image") { toast("Inspiration only takes images"); return; }
+        const r = await fetch(src);
+        const blob = await r.blob();
+        const file = new File([blob], src.split("/").pop() || "tray-image", { type: blob.type || "image/png" });
+        await runInspireUpload(file);
+        return;
+      } catch (err) { toast("Tray drop failed: " + err.message); return; }
+    }
     const f = e.dataTransfer?.files?.[0];
     if (f) await runInspireUpload(f);
   };
@@ -340,7 +386,7 @@ export async function renderGenerate(body, song) {
   }
 }
 
-function buildSeedPrompt(song) {
+function buildSeedPrompt(song, aspect = "square") {
   const parts = [];
   parts.push(`A music video visual for "${song.title}".`);
   if (song.genre) parts.push(`Genre cues: ${song.genre}.`);
@@ -349,6 +395,7 @@ function buildSeedPrompt(song) {
     parts.push(`Lyric mood: ${top}.`);
   }
   if (song.prompt) parts.push(`Suno prompt: ${song.prompt.slice(0, 240)}.`);
-  parts.push("Cinematic, high detail, 16:9, atmospheric lighting.");
+  const aspectStr = aspect === "portrait" ? "9:16 portrait" : aspect === "landscape" ? "16:9 widescreen" : "1:1 square";
+  parts.push(`Cinematic, high detail, ${aspectStr}, atmospheric lighting.`);
   return parts.join(" ");
 }

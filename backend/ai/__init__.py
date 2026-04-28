@@ -28,19 +28,31 @@ def tool_status() -> dict:
     }
 
 
-def generate_image(tool: str, prompt: str, song_id: int) -> dict:
+_ASPECT_DIMS = {
+    "square":    (1024, 1024),
+    "portrait":  (768, 1344),   # ~9:16, FLUX-friendly
+    "landscape": (1344, 768),   # ~16:9
+}
+
+
+def _dims(aspect: str) -> tuple[int, int]:
+    return _ASPECT_DIMS.get(aspect, _ASPECT_DIMS["square"])
+
+
+def generate_image(tool: str, prompt: str, song_id: int, aspect: str = "square") -> dict:
+    w, h = _dims(aspect)
     if tool == "pollinations":
-        return pollinations.generate_image(prompt, song_id)
+        return pollinations.generate_image(prompt, song_id, width=w, height=h)
     if tool == "pollinations-realism":
-        return pollinations.generate_image(prompt, song_id, model="flux-realism")
+        return pollinations.generate_image(prompt, song_id, model="flux-realism", width=w, height=h)
     if tool == "pollinations-anime":
-        return pollinations.generate_image(prompt, song_id, model="flux-anime")
+        return pollinations.generate_image(prompt, song_id, model="flux-anime", width=w, height=h)
     if tool == "pollinations-turbo":
-        return pollinations.generate_image(prompt, song_id, model="turbo")
+        return pollinations.generate_image(prompt, song_id, model="turbo", width=w, height=h)
     if tool == "hf-flux":
-        return huggingface.generate_image(prompt, song_id, model="black-forest-labs/FLUX.1-schnell")
+        return huggingface.generate_image(prompt, song_id, model="black-forest-labs/FLUX.1-schnell", width=w, height=h)
     if tool == "hf-flux-dev":
-        return huggingface.generate_image(prompt, song_id, model="black-forest-labs/FLUX.1-dev")
+        return huggingface.generate_image(prompt, song_id, model="black-forest-labs/FLUX.1-dev", width=w, height=h)
     if tool == "nano-banana":
         return gemini.generate_image(prompt, song_id)
     if tool == "grok":

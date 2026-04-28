@@ -7,9 +7,11 @@ import { bindThemePopover } from "./theme.js";
 
 async function loadChannels() {
   const list = document.getElementById("channel-list");
+  const countEl = document.getElementById("drawer-channels-n");
   list.innerHTML = "";
   try {
     const channels = await api.channels();
+    if (countEl) countEl.textContent = String(channels.length);
     const all = document.createElement("a");
     all.href = "#/";
     all.innerHTML = `<span class="count">${channels.reduce((a, c) => a + c.song_count, 0).toLocaleString()}</span>All`;
@@ -28,9 +30,11 @@ async function loadChannels() {
 
 async function loadAssetFolders() {
   const list = document.getElementById("asset-folder-list");
+  const countEl = document.getElementById("drawer-folders-n");
   list.innerHTML = "";
   try {
     const folders = await api.assetFolders();
+    if (countEl) countEl.textContent = String(folders.length);
     if (!folders.length) {
       list.innerHTML = `<div class="muted" style="padding:6px 10px">Drop into <code>myspot/assets/</code> and re-index.</div>`;
       return;

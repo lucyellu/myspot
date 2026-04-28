@@ -87,7 +87,19 @@ export function card(s) {
   const href = `#/song/${s.id}`;
   thumb.href = href;
   titleEl.href = href;
-  if (s.jpg_path) img.src = mediaUrl.cover(s.id); else img.removeAttribute("src");
+  if (s.jpg_path) {
+    img.src = mediaUrl.cover(s.id);
+    const markLowres = () => {
+      if (img.naturalWidth && img.naturalWidth < 200) {
+        img.classList.add("lowres");
+        thumb.classList.add("lowres");
+      }
+    };
+    if (img.complete) markLowres();
+    else img.addEventListener("load", markLowres, { once: true });
+  } else {
+    img.removeAttribute("src");
+  }
   img.alt = s.title || "";
   if (s.version > 1) verBadge.textContent = `v${s.version}`; else verBadge.remove();
   durBadge.textContent = fmtDuration(s.duration);

@@ -125,6 +125,23 @@ export async function renderPrompts(body, song) {
 
   await loadCategories();
   await reload();
+
+  // ── Notes (folded in here so it shares the prompts surface) ──────
+  const notesSection = el("section", { class: "gen-section" });
+  notesSection.append(el("h5", { class: "section-h" }, "📝 Notes"));
+  notesSection.append(el("p", { class: "muted small", style: "margin: -4px 0 8px" },
+    "Per-song. Auto-saves while you type."));
+  const notesArea = el("textarea", {
+    class: "notes-area",
+    placeholder: "Ideas, references, mood, planned visuals...",
+  }, song.note || "");
+  notesSection.append(notesArea);
+  const saveNote = debounce(async () => {
+    try { await api.putNote(song.id, notesArea.value); toast("Note saved"); }
+    catch (e) { toast("Note save failed: " + e.message); }
+  }, 800);
+  notesArea.addEventListener("input", saveNote);
+  body.append(notesSection);
 }
 
 function applyTemplate(tpl, song) {

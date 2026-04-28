@@ -2,6 +2,7 @@ import { api, mediaUrl } from "../api.js";
 import { fmtDuration, fmtAccount, el, clear, toast } from "../util.js";
 import { renderTab, currentTab, setSong } from "../sidepanel.js";
 import { attachHalftone } from "../components/halftone.js";
+import { applyDesignSettings } from "../tabs/design.js";
 
 let currentAudio = null;
 let _related = [];
@@ -9,6 +10,22 @@ let _keyAbort = null;
 let _track = [];          // ordered list of completed gens for the song
 let _activeClipIdx = -1;
 let _currentSong = null;
+let _slideshowMode = false;  // off by default — only first gen plays unless user opts in
+let _traySelected = new Set();  // tray ids picked via multi-select
+let _trackSelected = new Set();  // track-clip gen ids picked for batch delete
+
+const SLIDESHOW_KEY = "myspot.slideshow.v1";  // { [songId]: bool }
+function loadSlideshowMode(songId) {
+  try { return !!(JSON.parse(localStorage.getItem(SLIDESHOW_KEY) || "{}")[songId]); }
+  catch { return false; }
+}
+function saveSlideshowMode(songId, on) {
+  try {
+    const all = JSON.parse(localStorage.getItem(SLIDESHOW_KEY) || "{}");
+    all[songId] = !!on;
+    localStorage.setItem(SLIDESHOW_KEY, JSON.stringify(all));
+  } catch { /* ignore */ }
+}
 
 export async function renderWatch(songId) {
   const view = document.getElementById("view");
@@ -23,6 +40,8 @@ export async function renderWatch(songId) {
 
   _currentSong = song;
   _track = (song.gens || []).filter((g) => g.status === "completed" && g.file_path);
+  _slideshowMode = loadSlideshowMode(song.id);
+  _traySelected = new Set();
   paintVisual(document.getElementById("visual"), song);
   renderTrackStrip(song);
   bindCanvasDrops(song);
@@ -46,6 +65,9 @@ export async function renderWatch(songId) {
   audio.addEventListener("loadedmetadata", updateLcd);
   audio.addEventListener("timeupdate", updateLcd);
   updateLcd();
+
+  bindTransport(audio, song);
+  bindKaraoke(audio, song);
   const lcdBpm = document.getElementById("lcd-bpm");
   if (lcdBpm && song.bpm) { lcdBpm.textContent = song.bpm + " BPM"; lcdBpm.hidden = false; }
   const lcdVer = document.getElementById("lcd-version");
@@ -124,13 +146,14 @@ export async function renderWatch(songId) {
   bindShortcuts(song);
 
   // Lyrics scroll sync (simple progress-based highlight; estimate timestamps later)
-  // Plus live slideshow: advance visual based on playback position when >= 2 clips
+  // Slideshow auto-advance only runs when the user explicitly enables it on this
+  // song — by default a song shows just its primary visual, no rotation.
   audio.addEventListener("timeupdate", () => {
     const total = audio.duration || song.duration;
     const t = audio.currentTime;
     const detail = { t, total };
     document.dispatchEvent(new CustomEvent("audio:tick", { detail }));
-    if (_track.length >= 2 && total) {
+    if (_slideshowMode && _track.length >= 2 && total) {
       const idx = Math.min(_track.length - 1, Math.floor((t / total) * _track.length));
       if (idx !== _activeClipIdx) {
         _activeClipIdx = idx;
@@ -168,16 +191,114 @@ function renderTrackStrip(song) {
   const strip = document.getElementById("track-strip");
   if (!strip) return;
   strip.innerHTML = "";
+  // Drop any selections that no longer correspond to a present clip
+  for (const id of [..._trackSelected]) {
+    if (!_track.some((g) => g.id === id)) _trackSelected.delete(id);
+  }
+
   if (!_track.length) {
     strip.append(el("div", { class: "track-empty" },
-      "Drop images / videos / assets onto the player to build your visual track. They'll play in sequence with the audio."));
+      "Drop images / videos / assets onto the player to build your visual track."));
     return;
   }
+
+  // Action row at the start of the strip — slideshow toggle + bulk actions
+  const actions = el("div", { class: "track-actions" });
+  if (_track.length >= 2) {
+    const toggle = el("button", {
+      class: "slideshow-toggle" + (_slideshowMode ? " on" : ""),
+      type: "button",
+      title: _slideshowMode
+        ? "Slideshow ON — clips auto-advance with the song"
+        : "Slideshow OFF — only the first clip plays",
+    }, _slideshowMode ? "▶▶ ON" : "▶ OFF");
+    toggle.onclick = (e) => {
+      e.stopPropagation();
+      _slideshowMode = !_slideshowMode;
+      saveSlideshowMode(song.id, _slideshowMode);
+      if (!_slideshowMode && _track.length) {
+        _activeClipIdx = 0;
+        showClip(_track[0]);
+      }
+      renderTrackStrip(song);
+      highlightActiveClip();
+    };
+    actions.append(el("span", { class: "track-actions-label" }, "SLIDESHOW"));
+    actions.append(toggle);
+  }
+
+  if (_trackSelected.size) {
+    const delSel = el("button", { class: "track-action-btn danger", type: "button" },
+      `Delete ${_trackSelected.size} selected`);
+    delSel.onclick = async (e) => {
+      e.stopPropagation();
+      const n = _trackSelected.size;
+      if (!confirm(`Delete ${n} selected clip${n === 1 ? "" : "s"}?`)) return;
+      const ids = [..._trackSelected];
+      let ok = 0, fail = 0;
+      for (const id of ids) {
+        try { await api.deleteGen(id); ok++; } catch { fail++; }
+      }
+      _trackSelected.clear();
+      _track = _track.filter((g) => !ids.includes(g.id));
+      _activeClipIdx = -1;
+      renderTrackStrip(song);
+      if (_track[0]) showClip(_track[0]);
+      toast(`Deleted ${ok}${fail ? ` (${fail} failed)` : ""}`);
+    };
+    actions.append(delSel);
+  }
+
+  if (_track.length >= 2) {
+    const removeAll = el("button", { class: "track-action-btn danger", type: "button", title: "Detach every clip from this song" },
+      `Remove all (${_track.length})`);
+    removeAll.onclick = async (e) => {
+      e.stopPropagation();
+      if (!confirm(`Remove all ${_track.length} clips from this song? (Source files stay on disk; this only detaches them.)`)) return;
+      const ids = _track.map((g) => g.id);
+      let ok = 0, fail = 0;
+      for (const id of ids) {
+        try { await api.deleteGen(id); ok++; } catch { fail++; }
+      }
+      _track = []; _trackSelected.clear(); _activeClipIdx = -1;
+      renderTrackStrip(song);
+      paintVisual(document.getElementById("visual"), { ...song, gens: [] });
+      toast(`Removed ${ok}${fail ? ` (${fail} failed)` : ""}`);
+    };
+    actions.append(removeAll);
+  }
+
+  if (actions.children.length) strip.append(actions);
+
   _track.forEach((g, i) => {
-    const clip = el("div", { class: "track-clip", "data-idx": i });
+    const clip = el("div", { class: "track-clip", "data-idx": i, "data-gen-id": g.id });
     if (i === _activeClipIdx) clip.classList.add("active");
+    if (_trackSelected.has(g.id)) clip.classList.add("selected");
+
+    const sel = el("input", { type: "checkbox", class: "track-clip-check", title: "Select for batch delete" });
+    sel.checked = _trackSelected.has(g.id);
+    sel.onclick = (e) => e.stopPropagation();
+    sel.onchange = () => {
+      if (sel.checked) _trackSelected.add(g.id); else _trackSelected.delete(g.id);
+      clip.classList.toggle("selected", sel.checked);
+      renderTrackStrip(song);  // re-render so the bulk delete button appears/updates
+    };
+    clip.append(sel);
     if (g.kind === "video") {
-      clip.append(el("video", { src: mediaUrl.gen(g.id), muted: true, loop: true, playsinline: true }));
+      // Don't auto-fetch the video file just to show a thumb — load metadata
+      // only when the user hovers, otherwise stay as a lightweight placeholder.
+      const v = el("video", {
+        muted: true, loop: true, playsinline: true,
+        preload: "none",
+      });
+      v.dataset.src = mediaUrl.gen(g.id);
+      const loadOnHover = () => {
+        if (!v.src) v.src = v.dataset.src;
+        v.play().catch(() => {});
+      };
+      v.addEventListener("mouseenter", loadOnHover);
+      v.addEventListener("mouseleave", () => { v.pause(); v.currentTime = 0; });
+      clip.append(v);
     } else {
       clip.append(el("img", { src: mediaUrl.gen(g.id), loading: "lazy", alt: "" }));
     }
@@ -326,6 +447,34 @@ async function initMediaTray(song) {
 
   document.getElementById("media-tray-more").onclick = () => loadTrayMore();
 
+  // Bulk-attach actions for the multi-select state
+  const bulkAttach = document.getElementById("tray-bulk-attach");
+  const bulkClear = document.getElementById("tray-bulk-clear");
+  if (bulkAttach) bulkAttach.onclick = () => attachSelectedTrayItems();
+  if (bulkClear) bulkClear.onclick = () => {
+    _traySelected.clear();
+    document.querySelectorAll(".tray-tile-check").forEach((c) => { c.checked = false; });
+    updateTrayBulkBar();
+  };
+
+  await loadTray(_trayFolder);
+}
+
+async function attachSelectedTrayItems() {
+  if (!_currentSong) { toast("No song open"); return; }
+  if (!_traySelected.size) return;
+  const tiles = [...document.querySelectorAll(".media-tray-tile")];
+  const targets = tiles
+    .map((t) => t.__item)
+    .filter((it) => it && _traySelected.has(it.uid));
+  let ok = 0, fail = 0;
+  for (const it of targets) {
+    try { await it.attach(); ok++; } catch { fail++; }
+  }
+  toast(`Attached ${ok}${fail ? ` (${fail} failed)` : ""}`);
+  _traySelected.clear();
+  updateTrayBulkBar();
+  await refreshTrack();
   await loadTray(_trayFolder);
 }
 
@@ -359,6 +508,7 @@ async function loadTray(folder) {
       path = "C:\\Users\\lucyl\\Desktop\\myspot\\data\\gens\\";
       const r = await api.gensBrowse({ limit: _PAGE, offset: 0 });
       items = (r.items || []).map((g) => ({
+        uid: `gen:${g.id}`, _gen: g,
         kind: g.kind, src: mediaUrl.gen(g.id), tag: `${g.tool} • #${g.song_id}`,
         attach: () => attachGenToCurrent(g),
       }));
@@ -367,6 +517,7 @@ async function loadTray(folder) {
       path = `C:\\Users\\lucyl\\Desktop\\myspot\\assets\\${folder}\\`;
       const r = await api.assets({ folder, limit: _PAGE, offset: 0 });
       items = (r.items || []).map((a) => ({
+        uid: `asset:${a.id}`, _asset: a,
         kind: a.kind, src: mediaUrl.asset(a.id), tag: a.kind,
         attach: () => attachAssetToCurrent(a),
       }));
@@ -399,12 +550,14 @@ async function loadTrayMore() {
     if (_trayFolder === "_gens") {
       const r = await api.gensBrowse({ limit: _PAGE, offset: _trayOffset });
       items = (r.items || []).map((g) => ({
+        uid: `gen:${g.id}`, _gen: g,
         kind: g.kind, src: mediaUrl.gen(g.id), tag: `${g.tool} • #${g.song_id}`,
         attach: () => attachGenToCurrent(g),
       }));
     } else {
       const r = await api.assets({ folder: _trayFolder, limit: _PAGE, offset: _trayOffset });
       items = (r.items || []).map((a) => ({
+        uid: `asset:${a.id}`, _asset: a,
         kind: a.kind, src: mediaUrl.asset(a.id), tag: a.kind,
         attach: () => attachAssetToCurrent(a),
       }));
@@ -417,7 +570,12 @@ async function loadTrayMore() {
 }
 
 function trayTile(item) {
-  const tile = el("div", { class: "media-tray-tile", title: "Click to attach to current song" });
+  const tile = el("div", {
+    class: "media-tray-tile",
+    title: "Click to attach · Shift-click or checkbox to multi-select · Drag onto Image inspiration to use as prompt source",
+    draggable: "true",
+  });
+  tile.__item = item;  // for bulk-attach lookup by uid
   if (item.kind === "video") {
     tile.append(el("video", { src: item.src, muted: true, loop: true, playsinline: true,
       onmouseenter: (e) => e.currentTarget.play().catch(() => {}),
@@ -428,8 +586,47 @@ function trayTile(item) {
   }
   tile.append(el("span", { class: "tray-tile-tag" }, item.tag || ""));
   tile.append(el("span", { class: "tray-tile-attach" }, "+ track"));
-  tile.onclick = item.attach;
+
+  // Multi-select checkbox (top-left). Stops click bubbling so the tile click still
+  // does single-attach when used directly.
+  const cb = el("input", { type: "checkbox", class: "tray-tile-check", title: "Select for batch attach" });
+  cb.checked = _traySelected.has(item.uid);
+  cb.onclick = (e) => e.stopPropagation();
+  cb.onchange = () => {
+    if (cb.checked) _traySelected.add(item.uid);
+    else _traySelected.delete(item.uid);
+    updateTrayBulkBar();
+  };
+  tile.append(cb);
+
+  tile.onclick = (e) => {
+    if (e.shiftKey) {
+      cb.checked = !cb.checked;
+      cb.onchange();
+      return;
+    }
+    item.attach();
+  };
+
+  // Drag payload: serialize so the prompt-tab inspire-drop can fetch the asset.
+  tile.addEventListener("dragstart", (e) => {
+    const payload = JSON.stringify({ src: item.src, kind: item.kind, tag: item.tag });
+    e.dataTransfer.setData("application/x-myspot-tray", payload);
+    e.dataTransfer.setData("text/uri-list", item.src);
+    e.dataTransfer.effectAllowed = "copy";
+    tile.classList.add("dragging");
+  });
+  tile.addEventListener("dragend", () => tile.classList.remove("dragging"));
   return tile;
+}
+
+function updateTrayBulkBar() {
+  const bar = document.getElementById("tray-bulk-bar");
+  if (!bar) return;
+  const n = _traySelected.size;
+  bar.hidden = n === 0;
+  const lbl = bar.querySelector(".tray-bulk-count");
+  if (lbl) lbl.textContent = n ? `${n} selected` : "";
 }
 
 async function attachGenToCurrent(srcGen) {
@@ -500,7 +697,7 @@ function bindShortcuts(song) {
   if (_keyAbort) _keyAbort.abort();
   _keyAbort = new AbortController();
   const audio = currentAudio;
-  const TAB_NAMES = ["generate", "lyrics", "sources", "prompts", "queue", "notes"];
+  const TAB_NAMES = ["generate", "lyrics", "design", "sources", "prompts", "batch"];
 
   function focusedOnInput() {
     const t = document.activeElement;
@@ -542,6 +739,114 @@ function bindShortcuts(song) {
   }, { signal: _keyAbort.signal });
 }
 
+function bindTransport(audio, song) {
+  const playBtn = document.getElementById("tp-play");
+  const prevBtn = document.getElementById("tp-prev");
+  const nextBtn = document.getElementById("tp-next");
+  const scrub = document.getElementById("tp-scrub");
+  const muteBtn = document.getElementById("tp-mute");
+  const vol = document.getElementById("tp-vol");
+  const status = document.getElementById("lcd-status");
+  if (!playBtn || !scrub) return;
+
+  const refreshPlay = () => {
+    const playing = !audio.paused;
+    playBtn.textContent = playing ? "❚❚" : "▶";
+    if (status) status.textContent = playing ? "▶" : "❚❚";
+  };
+  playBtn.onclick = () => { audio.paused ? audio.play() : audio.pause(); };
+  audio.addEventListener("play", refreshPlay);
+  audio.addEventListener("pause", refreshPlay);
+  refreshPlay();
+
+  // Scrub bar — uses 0..1000 to keep granularity without bothering with float steps
+  let scrubbing = false;
+  const scrubFromAudio = () => {
+    if (scrubbing) return;
+    const total = audio.duration || song.duration || 0;
+    if (!total) return;
+    scrub.value = String(Math.round((audio.currentTime / total) * 1000));
+  };
+  audio.addEventListener("timeupdate", scrubFromAudio);
+  audio.addEventListener("loadedmetadata", scrubFromAudio);
+  scrub.addEventListener("input", () => {
+    scrubbing = true;
+    const total = audio.duration || song.duration || 0;
+    if (total) audio.currentTime = (Number(scrub.value) / 1000) * total;
+  });
+  scrub.addEventListener("change", () => { scrubbing = false; });
+
+  // Volume + mute
+  vol.value = String(Math.round(audio.volume * 100));
+  vol.oninput = () => { audio.volume = Number(vol.value) / 100; if (audio.volume > 0) audio.muted = false; };
+  muteBtn.onclick = () => { audio.muted = !audio.muted; muteBtn.textContent = audio.muted ? "🔇" : "🔊"; };
+
+  prevBtn.onclick = () => {
+    const sources = song.sources || [];
+    if (sources.length) location.hash = `#/song/${sources[0].id}`;
+    else toast("No source/parent.");
+  };
+  nextBtn.onclick = () => {
+    const next = _related[0];
+    if (next) location.hash = `#/song/${next.id}`;
+    else toast("No next song.");
+  };
+}
+
+let _karaokeOn = true;
+function bindKaraoke(audio, song) {
+  const overlay = document.getElementById("lyric-overlay");
+  const toggle = document.getElementById("tp-karaoke");
+  if (!overlay || !toggle) return;
+
+  // Apply persisted design settings (font, color, effects) before we render.
+  try { applyDesignSettings(song.id); }
+  catch (e) { console.warn("design settings failed", e); }
+
+  const apply = () => {
+    overlay.hidden = !_karaokeOn;
+    toggle.classList.toggle("on", _karaokeOn);
+  };
+  toggle.onclick = () => { _karaokeOn = !_karaokeOn; apply(); };
+  apply();
+
+  if (!song.lyrics || !song.lyrics.length) {
+    overlay.hidden = true;
+    return;
+  }
+
+  // Progress-driven highlight (lyrics aren't time-stamped, so we estimate from
+  // total duration). Show the active line big + the next line dim underneath,
+  // and animate a per-line fill progress 0→1 used by the `fx-fill` effect.
+  const lines = song.lyrics.filter((l) => l.text && l.text.trim());
+  let lastIdx = -1;
+  const handler = (e) => {
+    if (overlay.hidden) return;
+    const { t, total } = e.detail;
+    if (!total || !lines.length) return;
+    const segment = total / lines.length;
+    const idx = Math.min(lines.length - 1, Math.floor(t / segment));
+    const lineProgress = Math.min(1, Math.max(0, (t - idx * segment) / segment));
+
+    if (idx !== lastIdx) {
+      const cur = lines[idx]?.text || "";
+      const nxt = lines[idx + 1]?.text || "";
+      overlay.innerHTML =
+        `<div class="lyric-line-current" data-text="${escapeHtml(cur)}">${escapeHtml(cur)}</div>` +
+        (nxt ? `<div class="lyric-line-next">${escapeHtml(nxt)}</div>` : "");
+      lastIdx = idx;
+    }
+    overlay.style.setProperty("--fill-progress", lineProgress.toFixed(3));
+  };
+  document.addEventListener("audio:tick", handler);
+}
+
+function escapeHtml(s) {
+  return String(s)
+    .replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;")
+    .replace(/"/g, "&quot;").replace(/'/g, "&#39;");
+}
+
 export function refreshPlayerVisual(song) {
   const visual = document.getElementById("visual");
   if (!visual) return;
@@ -568,13 +873,20 @@ function paintVisual(visual, song) {
   }
 
   if (song.jpg_path) {
-    // Suno cover — only 40x40 in this library, so blur-backdrop + centered sharp.
+    // Suno cover — typically only 40x40 in this library, so blur-backdrop +
+    // centered sharp + pixelated upscale once we confirm the natural size.
     visual.classList.add("with-art");
     const url = mediaUrl.cover(song.id);
     const bg = el("div", { class: "blur-bg" });
     bg.style.backgroundImage = `url(${url})`;
     const wrap = el("div", { class: "center-art" });
-    wrap.append(el("img", { src: url, alt: "" }));
+    const coverImg = el("img", { src: url, alt: "" });
+    coverImg.addEventListener("load", () => {
+      if (coverImg.naturalWidth && coverImg.naturalWidth < 200) {
+        coverImg.classList.add("lowres");
+      }
+    }, { once: true });
+    wrap.append(coverImg);
     visual.append(bg, wrap);
   }
 }

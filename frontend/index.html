@@ -7,7 +7,7 @@
 <link rel="icon" type="image/x-icon" href="/static/icon.ico" />
 <link rel="preconnect" href="https://fonts.googleapis.com" />
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
-<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=VT323&family=Pixelify+Sans:wght@400;500;600;700&display=swap" />
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=VT323&family=Pixelify+Sans:wght@400;500;600;700&family=Inter:wght@400;500;600;700&display=swap" />
 <link rel="stylesheet" href="/static/css/app.css" />
 </head>
 <body>
@@ -35,16 +35,20 @@
     <input type="range" id="theme-lig" min="20" max="80" step="1" />
   </div>
   <div class="actions">
-    <button class="btn" type="button" id="theme-toggle-mode">DARK MODE</button>
+    <button class="btn" type="button" id="theme-toggle-mode">CONTRAST MODE</button>
     <button class="btn" type="button" id="theme-reset">RESET</button>
   </div>
 </div>
 
 <aside class="sidedrawer" id="sidedrawer">
-  <h3>CHANNELS</h3>
-  <div id="channel-list" class="channel-list"></div>
-  <h3 class="mt">FOLDERS</h3>
-  <div id="asset-folder-list" class="channel-list"></div>
+  <details class="drawer-section" id="drawer-channels">
+    <summary><span class="drawer-section-h">CHANNELS</span><span class="drawer-section-n" id="drawer-channels-n"></span></summary>
+    <div id="channel-list" class="channel-list"></div>
+  </details>
+  <details class="drawer-section" id="drawer-folders">
+    <summary><span class="drawer-section-h">FOLDERS</span><span class="drawer-section-n" id="drawer-folders-n"></span></summary>
+    <div id="asset-folder-list" class="channel-list"></div>
+  </details>
 </aside>
 
 <main id="view"></main>
@@ -79,11 +83,14 @@
   <section class="watch">
     <div class="watch-main">
       <div class="player">
-        <div class="visual" id="visual"></div>
-        <canvas id="halftone" class="halftone-overlay"></canvas>
-        <div class="drop-overlay" id="drop-overlay">DROP TO ADD TO TRACK</div>
+        <div class="player-stage">
+          <div class="visual" id="visual"></div>
+          <canvas id="halftone" class="halftone-overlay"></canvas>
+          <div class="drop-overlay" id="drop-overlay">DROP TO ADD TO TRACK</div>
+          <div class="lyric-overlay" id="lyric-overlay" hidden></div>
+        </div>
         <div class="lcd-strip">
-          <span class="lcd-label">▶</span>
+          <span class="lcd-label" id="lcd-status">▶</span>
           <span class="lcd-time" id="lcd-time-cur">00:00</span>
           <span class="lcd-sep">/</span>
           <span class="lcd-time" id="lcd-time-tot">00:00</span>
@@ -91,8 +98,18 @@
           <span class="lcd-label" id="lcd-bpm" hidden></span>
           <span class="lcd-label" id="lcd-version" hidden></span>
         </div>
-        <audio id="audio" controls preload="metadata"></audio>
+        <div class="transport" id="transport">
+          <button class="tp-btn" id="tp-prev" type="button" title="Previous (P)">⏮</button>
+          <button class="tp-btn tp-play" id="tp-play" type="button" title="Play / pause (Space)">▶</button>
+          <button class="tp-btn" id="tp-next" type="button" title="Next (N)">⏭</button>
+          <input type="range" class="tp-scrub" id="tp-scrub" min="0" max="1000" value="0" step="1" />
+          <button class="tp-btn tp-mute" id="tp-mute" type="button" title="Mute (M)">🔊</button>
+          <input type="range" class="tp-vol" id="tp-vol" min="0" max="100" value="100" step="1" title="Volume" />
+          <button class="tp-btn tp-karaoke on" id="tp-karaoke" type="button" title="Karaoke lyric overlay">KARA</button>
+        </div>
+        <audio id="audio" preload="metadata"></audio>
       </div>
+      <div class="lyric-strip-host" id="lyric-strip-host"></div>
       <div class="track-strip" id="track-strip">
         <div class="track-empty">DROP IMAGES / VIDEOS / ASSETS HERE TO BUILD YOUR TRACK</div>
       </div>
@@ -103,6 +120,11 @@
           <span class="media-tray-path muted small" id="media-tray-path"></span>
         </summary>
         <div class="media-tray-body">
+          <div id="tray-bulk-bar" class="tray-bulk-bar" hidden>
+            <span class="tray-bulk-count"></span>
+            <button class="btn" type="button" id="tray-bulk-attach">Attach selected to song</button>
+            <button class="btn" type="button" id="tray-bulk-clear">Clear</button>
+          </div>
           <div class="media-tray-grid" id="media-tray-grid"></div>
           <div class="media-tray-footer">
             <button class="btn" id="media-tray-more" type="button">LOAD MORE</button>
@@ -128,12 +150,12 @@
     <aside class="sidepanel">
       <nav class="tabs fm-dial" id="tabs">
         <div class="fm-tick">
-          <button data-tab="generate" class="active"><span class="fm-freq">88</span><span class="fm-name">GEN</span></button>
-          <button data-tab="lyrics"><span class="fm-freq">92</span><span class="fm-name">LYR</span></button>
-          <button data-tab="sources"><span class="fm-freq">96</span><span class="fm-name">SRC</span></button>
-          <button data-tab="prompts"><span class="fm-freq">100</span><span class="fm-name">PRM</span></button>
-          <button data-tab="queue"><span class="fm-freq">104</span><span class="fm-name">QUE</span></button>
-          <button data-tab="notes"><span class="fm-freq">107</span><span class="fm-name">NOT</span></button>
+          <button data-tab="generate" class="active"><span class="fm-freq" data-count="generate">0</span><span class="fm-name">GENERATE</span></button>
+          <button data-tab="lyrics"><span class="fm-freq" data-count="lyrics">0</span><span class="fm-name">LYRICS</span></button>
+          <button data-tab="design"><span class="fm-freq" data-count="design">·</span><span class="fm-name">DESIGN</span></button>
+          <button data-tab="sources"><span class="fm-freq" data-count="sources">0</span><span class="fm-name">SOURCES</span></button>
+          <button data-tab="prompts"><span class="fm-freq" data-count="prompts">0</span><span class="fm-name">PROMPTS</span></button>
+          <button data-tab="batch"><span class="fm-freq" data-count="batch">0</span><span class="fm-name">BATCH</span></button>
         </div>
       </nav>
       <div class="tab-body" id="tab-body"></div>

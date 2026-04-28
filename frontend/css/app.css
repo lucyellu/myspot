@@ -45,6 +45,8 @@
   --font-pixel: "VT323", "Press Start 2P", "Courier New", ui-monospace, monospace;
   --font-display: "Pixelify Sans", "VT323", system-ui, sans-serif;
   --font-mono: "VT323", ui-monospace, "Cascadia Mono", monospace;
+  /* Legible body font — used for most prose, lists, metadata */
+  --font-body: "Inter", system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
 }
 
 * { box-sizing: border-box; }
@@ -53,11 +55,9 @@ html, body {
   background: var(--bg);
   color: var(--ink);
   height: 100%;
-  font-family: var(--font-pixel);
-  font-size: 18px;
-  line-height: 1.25;
-  -webkit-font-smoothing: never;
-  font-smooth: never;
+  font-family: var(--font-body);
+  font-size: 15px;
+  line-height: 1.45;
   text-rendering: geometricPrecision;
 }
 body {
@@ -70,6 +70,22 @@ button { font: inherit; color: inherit; cursor: pointer; }
 img { display: block; max-width: 100%; }
 input, select, textarea { font-family: inherit; }
 ::selection { background: var(--ink); color: var(--accent); }
+
+/* Themed minimal scrollbars — slim, hue-tinted, no chrome corners. */
+* {
+  scrollbar-width: thin;
+  scrollbar-color: var(--border) transparent;
+}
+::-webkit-scrollbar { width: 8px; height: 8px; }
+::-webkit-scrollbar-track { background: transparent; }
+::-webkit-scrollbar-thumb {
+  background: hsla(var(--hue), 35%, 35%, 0.55);
+  border-radius: 999px;
+  border: 1px solid transparent;
+  background-clip: padding-box;
+}
+::-webkit-scrollbar-thumb:hover { background: var(--accent); }
+::-webkit-scrollbar-corner { background: transparent; }
 
 /* utility text styles */
 .muted { color: var(--ink-mute); font-size: 14px; }
@@ -99,21 +115,43 @@ input, select, textarea { font-family: inherit; }
   color: var(--accent);
   border: 2px solid var(--ink);
   border-radius: 999px;
-  font-family: var(--font-mono);
-  font-size: 16px;
+  /* Search bar keeps the pixel/LCD vibe — it's the marquee retro element */
+  font-family: var(--font-pixel);
+  font-size: 18px;
   letter-spacing: 0.06em;
 }
-.search::placeholder { color: var(--lcd-dim); }
+.search::placeholder { color: var(--lcd-dim); font-family: var(--font-pixel); }
 .search:focus {
   outline: none;
   box-shadow: 0 0 0 2px var(--accent), inset 0 0 8px rgba(200,232,95,0.15);
 }
-.topbar-spacer { flex: 1; }
+.topbar-spacer { flex: 0 1 24px; }
 .stats {
   font-family: var(--font-mono);
   font-size: 13px;
   letter-spacing: 0.04em;
   color: var(--ink-mute);
+  white-space: nowrap;
+}
+
+/* Topbar responsive — fold less-essential things first as space tightens */
+@media (max-width: 1100px) {
+  .topbar { padding: 0 14px; gap: 10px; }
+  .stats { font-size: 12px; }
+}
+@media (max-width: 900px) {
+  .topbar { gap: 8px; }
+  .stats { display: none; }
+}
+@media (max-width: 600px) {
+  .topbar { padding: 0 10px; }
+  .topbar-spacer { display: none; }
+  .brand { font-size: 18px; }
+  .search { font-size: 15px; }
+}
+@media (max-width: 480px) {
+  .brand { display: none; }
+  .search { letter-spacing: 0.04em; }
 }
 .ico-btn {
   width: 36px; height: 36px;
@@ -140,15 +178,42 @@ input, select, textarea { font-family: inherit; }
   transition: transform .18s ease;
 }
 .sidedrawer.hidden { transform: translateX(calc(-1 * var(--drawer-w))); }
-.sidedrawer h3 {
-  margin: 4px 0 10px;
+
+/* Collapsible sections in the side drawer */
+.drawer-section { margin: 4px 0 12px; }
+.drawer-section + .drawer-section { margin-top: 18px; }
+.drawer-section > summary {
+  list-style: none;
+  cursor: pointer;
+  display: flex; align-items: center; gap: 6px;
+  padding: 4px 4px 6px;
   font-family: var(--font-display);
   font-size: 12px;
   letter-spacing: 0.18em;
   color: var(--ink);
   font-weight: 600;
+  border-bottom: 1px dashed var(--border);
+  user-select: none;
 }
-.sidedrawer h3.mt { margin-top: 24px; }
+.drawer-section > summary::-webkit-details-marker { display: none; }
+.drawer-section > summary::before {
+  content: "▸";
+  display: inline-block;
+  width: 12px;
+  font-size: 10px;
+  color: var(--ink-mute);
+  transition: transform .15s ease;
+}
+.drawer-section[open] > summary::before { transform: rotate(90deg); }
+.drawer-section .drawer-section-h { flex: 1; }
+.drawer-section .drawer-section-n {
+  font-family: var(--font-mono);
+  font-size: 11px;
+  color: var(--ink-mute);
+  font-weight: 400;
+  letter-spacing: 0.04em;
+}
+.drawer-section[open] > summary { margin-bottom: 6px; }
 .channel-list a {
   display: block;
   padding: 7px 10px;
@@ -201,8 +266,8 @@ main {
 }
 .grid {
   display: grid;
-  grid-template-columns: repeat(auto-fill, minmax(220px, 1fr));
-  gap: 16px;
+  grid-template-columns: repeat(auto-fill, minmax(110px, 1fr));
+  gap: 10px;
 }
 .grid-footer {
   display: flex; align-items: center; gap: 14px;
@@ -250,12 +315,12 @@ main {
 }
 
 /* ========== Card ========== */
-.card { display: flex; flex-direction: column; gap: 8px; cursor: pointer; }
+.card { display: flex; flex-direction: column; gap: 4px; cursor: pointer; }
 .card .thumb {
   position: relative; aspect-ratio: 1 / 1;
   overflow: hidden; display: block;
   border: 2px solid var(--ink);
-  border-radius: var(--radius);
+  border-radius: var(--radius-sm);
   background: var(--panel);
 }
 .card .thumb img {
@@ -263,35 +328,54 @@ main {
   transition: transform .25s ease;
   filter: contrast(1.05) saturate(0.92);
 }
+/* Tiny source images (e.g. 40x40 Suno covers) are scaled up nearest-neighbour
+   so they look intentionally pixelated — visual cue to regen at proper size. */
+.card .thumb img.lowres,
+.visual .center-art img.lowres {
+  image-rendering: pixelated;
+  image-rendering: -moz-crisp-edges;
+  image-rendering: crisp-edges;
+  filter: contrast(1.1) saturate(0.95);
+}
+.card .thumb.lowres::after {
+  content: "LO-RES";
+  position: absolute; top: 6px; left: 6px;
+  font-family: var(--font-mono); font-size: 10px; letter-spacing: 0.1em;
+  background: var(--ink); color: var(--accent-2);
+  padding: 2px 6px; border-radius: 3px;
+  pointer-events: none;
+}
 .card:hover .thumb img { transform: scale(1.04); }
 .card-version, .card-duration, .card-liked {
-  position: absolute; bottom: 6px;
-  font-family: var(--font-mono); font-size: 12px; letter-spacing: 0.06em;
+  position: absolute; bottom: 3px;
+  font-family: var(--font-mono); font-size: 9px; letter-spacing: 0.04em;
   color: var(--accent); background: var(--panel);
-  padding: 2px 8px; border-radius: 4px; border: 1px solid var(--ink);
+  padding: 1px 4px; border-radius: 3px; border: 1px solid var(--ink);
 }
-.card-version { left: 6px; background: var(--ink); }
-.card-duration { right: 6px; }
+.card-version { left: 3px; background: var(--ink); }
+.card-duration { right: 3px; }
 .card-liked {
-  top: 6px; right: 6px; bottom: auto;
+  top: 3px; right: 3px; bottom: auto;
   background: var(--ink); color: var(--accent-2);
-  font-size: 14px;
+  font-size: 10px;
 }
-.card-body { padding: 0 4px; }
+.card-body { padding: 0 2px; }
 .card-title {
   display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical;
   overflow: hidden;
   font-family: var(--font-display);
-  font-size: 16px; font-weight: 600;
-  line-height: 1.2;
+  font-size: 11px; font-weight: 600;
+  line-height: 1.15;
   color: var(--ink);
-  letter-spacing: 0.02em;
+  letter-spacing: 0.01em;
 }
 .card-sub {
-  font-family: var(--font-mono); font-size: 13px;
-  letter-spacing: 0.04em;
+  font-family: var(--font-body); font-size: 10px;
+  letter-spacing: 0;
   color: var(--ink-mute);
-  margin-top: 2px;
+  margin-top: 1px;
+  display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical;
+  overflow: hidden;
 }
 
 /* ========== Watch view ========== */
@@ -311,7 +395,6 @@ main {
 /* Player frame — looks like a cassette deck face */
 .player {
   position: relative;
-  aspect-ratio: 16/9;
   max-width: 100%;
   background: var(--panel);
   border: 3px solid var(--ink);
@@ -319,6 +402,15 @@ main {
   overflow: hidden;
   display: flex; flex-direction: column;
   box-shadow: 0 8px 0 var(--ink), 0 12px 24px var(--shadow);
+}
+/* The actual video / artwork area — sized 16:9. Sits above the LCD strip and
+   transport, which are now static rows so they no longer cover the visual. */
+.player-stage {
+  position: relative;
+  aspect-ratio: 16/9;
+  width: 100%;
+  background-color: #0d0f0a;
+  overflow: hidden;
 }
 .player.drag-over .drop-overlay { display: flex; }
 .drop-overlay {
@@ -335,9 +427,8 @@ main {
   pointer-events: none;
 }
 .visual {
-  flex: 1; min-height: 0;
+  position: absolute; inset: 0;
   background-color: #0d0f0a;
-  position: relative;
   overflow: hidden;
 }
 .visual .blur-bg {
@@ -371,11 +462,11 @@ main {
   opacity: 0.85;
 }
 
-/* LCD strip across the player */
+/* LCD strip — static row below the visual stage. Shows time, BPM, version. */
 .lcd-strip {
-  position: absolute; left: 14px; right: 14px; bottom: 56px; z-index: 5;
   display: flex; align-items: center; gap: 10px;
   padding: 6px 12px;
+  margin: 8px 12px 0;
   background: var(--lcd-bg);
   color: var(--lcd-glow);
   border: 2px solid var(--ink);
@@ -397,12 +488,230 @@ main {
 }
 .lcd-spacer { flex: 1; }
 
-/* Audio control — tucked under the visual */
-.player audio {
-  width: 100%; height: 44px;
-  background: var(--panel-2);
-  filter: invert(1) hue-rotate(180deg) saturate(0.6);
-  accent-color: var(--accent);
+/* The native audio element is hidden — actual playback is controlled by
+   the custom .transport row below, which sits inside the cassette deck and
+   matches the theme. */
+.player audio { display: none; }
+
+/* Custom transport — static row below the LCD strip, never covers the video. */
+.transport {
+  display: flex; align-items: center; gap: 8px;
+  padding: 6px 10px;
+  margin: 8px 12px 12px;
+  background: var(--lcd-bg);
+  border: 2px solid var(--ink);
+  border-radius: var(--radius-sm);
+  font-family: var(--font-mono);
+  color: var(--lcd-glow);
+}
+.tp-btn {
+  background: transparent;
+  color: var(--lcd-glow);
+  border: 1px solid var(--lcd-line);
+  border-radius: 4px;
+  padding: 3px 9px;
+  font-family: var(--font-mono); font-size: 14px;
+  letter-spacing: 0.06em;
+  cursor: pointer;
+  text-shadow: 0 0 6px rgba(200,232,95,0.5);
+}
+.tp-btn:hover { background: rgba(200,232,95,0.1); }
+.tp-btn.tp-play { padding: 3px 13px; font-size: 16px; }
+.tp-btn.tp-karaoke { font-size: 11px; letter-spacing: 0.14em; }
+.tp-btn.tp-karaoke.on {
+  background: var(--accent); color: var(--panel);
+  text-shadow: none;
+  box-shadow: 0 0 6px rgba(200,232,95,0.7);
+}
+.tp-scrub { flex: 1; min-width: 0; accent-color: var(--accent); height: 4px; }
+.tp-vol { width: 70px; flex-shrink: 0; accent-color: var(--accent); height: 4px; }
+
+/* Karaoke overlay — placement is set by the Design tab.
+   Defaults below; placement classes override left/right/top/bottom. */
+.lyric-overlay {
+  display: flex; flex-direction: column; align-items: center; gap: 6px;
+  pointer-events: none;
+  text-align: center;
+  z-index: 5;
+  /* Heavy text-shadow stack so any color reads on any artwork. */
+  text-shadow:
+    -1px -1px 0 rgba(0,0,0,0.9),
+     1px -1px 0 rgba(0,0,0,0.9),
+    -1px  1px 0 rgba(0,0,0,0.9),
+     1px  1px 0 rgba(0,0,0,0.9),
+    0 2px 4px rgba(0,0,0,0.95),
+    0 0 14px rgba(0,0,0,0.6);
+}
+.lyric-overlay.placement-overlay-bottom {
+  position: absolute; left: 4%; right: 4%; bottom: 6%;
+}
+.lyric-overlay.placement-overlay-top {
+  position: absolute; left: 4%; right: 4%; top: 6%;
+}
+.lyric-overlay.placement-below {
+  position: relative;
+  margin: 8px 12px 0;
+  padding: 12px 14px;
+  background: var(--lcd-bg);
+  border: 2px solid var(--ink);
+  border-radius: var(--radius-sm);
+  /* Below-video doesn't need to fight artwork, so drop the heavy shadows. */
+  text-shadow: none;
+}
+
+/* Optional dark scrim band behind the lines for max legibility on busy art.
+   Only kicks in for overlay placements. */
+.lyric-overlay.fx-scrim.placement-overlay-bottom,
+.lyric-overlay.fx-scrim.placement-overlay-top {
+  background:
+    linear-gradient(to bottom,
+      transparent 0%,
+      rgba(0,0,0,0.55) 30%,
+      rgba(0,0,0,0.55) 70%,
+      transparent 100%);
+  padding: 10px 14px;
+  border-radius: 6px;
+}
+
+.lyric-strip-host {
+  /* When placement = "below", the design tab moves the overlay into here. */
+  display: contents;
+}
+.lyric-overlay[hidden] { display: none; }
+/* The overlay reads custom props set by the Design tab — defaults below kick
+   in if the tab hasn't run yet. Per-line `--fill-progress` (0..1) drives the
+   karaoke text-fill animation on .fx-fill. */
+.lyric-overlay {
+  --lyric-font: var(--font-display);
+  --lyric-size: 32px;
+  --lyric-color: var(--accent);
+  --lyric-fill-a: var(--accent);
+  --lyric-fill-b: var(--accent-2);
+  --fill-progress: 0;
+}
+.lyric-line-current {
+  position: relative;
+  font-family: var(--lyric-font);
+  font-size: var(--lyric-size, 32px);
+  font-weight: 700;
+  color: var(--lyric-color);
+  letter-spacing: 0.02em;
+  line-height: 1.15;
+}
+.lyric-line-next {
+  font-family: var(--font-body);
+  /* Next-line is always smaller — half of current, with sane bounds. */
+  font-size: clamp(11px, calc(var(--lyric-size, 32px) * 0.45), 18px);
+  color: hsla(var(--hue), 30%, 78%, 0.78);
+  letter-spacing: 0.01em;
+}
+
+/* fx-fill: gradient overlays the active line, masked by the line's silhouette
+   via background-clip: text. The gradient hard-stop at --fill-progress
+   produces the karaoke-fill effect. Implemented as a stacked element so we
+   keep the dark text-shadow + outline below. */
+.lyric-overlay.fx-fill .lyric-line-current,
+.design-preview-line.fx-fill {
+  background-image: linear-gradient(
+    to right,
+    var(--lyric-fill-b) 0,
+    var(--lyric-fill-b) calc(var(--fill-progress, 0) * 100%),
+    var(--lyric-fill-a) calc(var(--fill-progress, 0) * 100%),
+    var(--lyric-fill-a) 100%
+  );
+  -webkit-background-clip: text;
+          background-clip: text;
+  color: transparent;
+  -webkit-text-fill-color: transparent;
+  transition: --fill-progress 0.05s linear;
+}
+.design-preview-line.fx-fill { animation: design-preview-fill 2.4s ease-in-out infinite alternate; }
+@keyframes design-preview-fill {
+  from { --fill-progress: 0; }
+  to   { --fill-progress: 1; }
+}
+@property --fill-progress {
+  syntax: "<number>";
+  inherits: true;
+  initial-value: 0;
+}
+
+/* fx-glow: hue-tinted halo behind active line. */
+.lyric-overlay.fx-glow .lyric-line-current,
+.design-preview-line.fx-glow {
+  filter: drop-shadow(0 0 14px hsla(var(--hue), 70%, 55%, 0.55));
+}
+
+/* fx-outline: hollow text effect on the active line. */
+.lyric-overlay.fx-outline .lyric-line-current,
+.design-preview-line.fx-outline {
+  -webkit-text-stroke: 2px var(--lyric-color);
+  -webkit-text-fill-color: transparent;
+  background: none;
+  color: transparent;
+}
+
+/* fx-bounce: tiny scale pulse when a new line lands. */
+.lyric-overlay.fx-bounce .lyric-line-current,
+.design-preview-line.fx-bounce {
+  animation: lyric-bounce 0.45s ease-out;
+}
+@keyframes lyric-bounce {
+  0%   { transform: scale(0.92); opacity: 0.6; }
+  60%  { transform: scale(1.06); opacity: 1; }
+  100% { transform: scale(1);    opacity: 1; }
+}
+
+/* ── Design tab UI ── */
+.design-color-row { margin-bottom: 8px; }
+.design-color-row label {
+  display: flex; align-items: center; gap: 8px;
+  font-family: var(--font-display); font-size: 11px; letter-spacing: 0.16em;
+  color: var(--ink-soft);
+}
+.design-color-row input[type="color"] {
+  width: 36px; height: 28px; padding: 0;
+  border: 2px solid var(--border); border-radius: 4px;
+  background: var(--panel); cursor: pointer;
+}
+.design-color-row .small-btn {
+  padding: 3px 9px; font-size: 10px; letter-spacing: 0.1em;
+}
+.design-fx-row {
+  display: grid; grid-template-columns: 18px auto 1fr; align-items: baseline;
+  gap: 8px;
+  padding: 6px 0;
+  border-bottom: 1px dashed var(--border);
+}
+.design-fx-row:last-child { border-bottom: 0; }
+.design-fx-row input[type="checkbox"] { accent-color: var(--accent); }
+.design-fx-name {
+  font-family: var(--font-display); font-size: 12px; letter-spacing: 0.1em;
+  color: var(--ink);
+}
+.design-fx-help { font-size: 11px; color: var(--ink-mute); }
+
+.design-preview-frame {
+  margin-top: 8px;
+  padding: 24px 18px;
+  background:
+    radial-gradient(circle at 30% 30%, hsla(var(--hue), 60%, 35%, 0.25) 0, transparent 60%),
+    var(--panel);
+  border: 2px solid var(--border);
+  border-radius: var(--radius-sm);
+  text-align: center;
+  min-height: 80px;
+  display: flex; align-items: center; justify-content: center;
+}
+.design-preview-line {
+  --lyric-fill-a: var(--accent);
+  --lyric-fill-b: var(--accent-2);
+  --fill-progress: 0;
+  font-size: clamp(18px, 2.4vw, 26px);
+  font-weight: 700;
+  color: var(--accent);
+  letter-spacing: 0.02em;
+  text-shadow: 0 2px 0 rgba(0,0,0,0.7);
 }
 
 /* ========== Track strip ========== */
@@ -428,12 +737,63 @@ main {
   font-size: 13px; letter-spacing: 0.12em;
   padding: 14px;
 }
+.track-actions {
+  display: flex; align-items: center; gap: 8px;
+  flex-shrink: 0;
+  padding-right: 10px;
+  border-right: 2px dashed var(--ink);
+  margin-right: 4px;
+  align-self: stretch;
+}
+.track-actions-label {
+  font-family: var(--font-display); font-size: 10px; letter-spacing: 0.16em;
+  color: var(--ink-mute);
+  align-self: center;
+}
+.slideshow-toggle, .track-action-btn {
+  flex-shrink: 0;
+  padding: 6px 12px;
+  background: var(--bg-2); color: var(--ink);
+  border: 2px solid var(--ink);
+  border-radius: var(--radius-sm);
+  font-family: var(--font-display);
+  font-size: 11px; letter-spacing: 0.12em;
+  cursor: pointer;
+  white-space: nowrap;
+}
+.slideshow-toggle.on {
+  background: var(--accent); color: var(--ink);
+  box-shadow: 0 0 8px rgba(200,232,95,0.5);
+}
+.slideshow-toggle:hover, .track-action-btn:hover { filter: brightness(1.1); }
+.track-action-btn.danger {
+  border-color: var(--accent-2);
+  color: var(--accent-2);
+}
+.track-action-btn.danger:hover {
+  background: var(--accent-2);
+  color: var(--panel);
+}
+
+.track-clip-check {
+  position: absolute; top: 3px; left: 3px;
+  width: 16px; height: 16px;
+  margin: 0; padding: 0;
+  accent-color: var(--accent);
+  cursor: pointer;
+  z-index: 3;
+}
+.track-clip.selected { outline: 3px solid var(--accent-2); outline-offset: -3px; }
 .track-clip {
   position: relative; flex-shrink: 0;
   width: 110px; aspect-ratio: 16/9;
   border-radius: var(--radius-sm);
   overflow: hidden;
-  background: #1a1c16;
+  /* Subtle "play" hint for video clips that haven't been hover-loaded yet —
+     shows as a centered triangle on the dark backdrop until the src loads. */
+  background:
+    radial-gradient(circle at center, rgba(200,232,95,0.08) 0, transparent 50%),
+    #1a1c16;
   cursor: pointer;
   border: 2px solid #2a2c26;
   transition: border-color .12s, transform .12s;
@@ -463,9 +823,9 @@ main {
   opacity: 0; transition: opacity .12s;
   letter-spacing: 0.06em;
 }
-.track-clip-x { right: 2px; background: rgba(0,0,0,0.7); color: white; }
+.track-clip-x { right: 2px; background: rgba(0,0,0,0.75); color: var(--accent); }
 .track-clip-anim { right: 24px; background: var(--accent); color: var(--ink); }
-.track-clip-kling { right: 50px; background: #6588ff; color: white; }
+.track-clip-kling { right: 50px; background: var(--accent-2); color: var(--ink); }
 .track-clip-tool {
   position: absolute; bottom: 2px; left: 4px;
   background: var(--ink); color: var(--accent);
@@ -549,6 +909,27 @@ main {
   pointer-events: none;
 }
 .media-tray-tile:hover .tray-tile-attach { opacity: 1; }
+.media-tray-tile .tray-tile-check {
+  position: absolute; top: 4px; left: 4px;
+  width: 18px; height: 18px;
+  margin: 0; padding: 0;
+  accent-color: var(--accent);
+  cursor: pointer;
+  z-index: 2;
+}
+.media-tray-tile.dragging { opacity: 0.5; transform: scale(0.95); }
+.tray-bulk-bar {
+  display: flex; align-items: center; gap: 12px;
+  padding: 8px 12px; margin-bottom: 10px;
+  background: var(--bg-2);
+  border: 2px solid var(--accent);
+  border-radius: var(--radius-sm);
+}
+.tray-bulk-bar[hidden] { display: none; }
+.tray-bulk-count {
+  font-family: var(--font-mono); font-size: 13px; letter-spacing: 0.08em;
+  color: var(--ink); flex: 1;
+}
 .media-tray-footer {
   display: flex; gap: 12px; align-items: center;
   padding-top: 12px;
@@ -642,11 +1023,16 @@ main {
   display: flex; flex-direction: column;
   box-shadow: 0 6px 0 var(--ink), 0 10px 20px var(--shadow);
   align-self: start;
+  min-width: 0;       /* let it actually shrink to its grid track */
+  overflow: hidden;   /* keep stray-overflow children inside the rounded frame */
 }
 .tab-body {
   padding: 14px;
-  /* No flex/min-height tricks — let content set the height */
+  min-width: 0;
 }
+.tab-body * { max-width: 100%; }
+.tab-body .btn,
+.tab-body button { word-break: keep-all; }
 .tabs.fm-dial {
   background: var(--panel);
   border-bottom: 2px solid var(--ink);
@@ -692,8 +1078,9 @@ main {
   font-variant-numeric: tabular-nums;
 }
 .fm-name {
-  font-family: var(--font-mono); font-size: 9px; letter-spacing: 0.12em;
-  opacity: 0.7;
+  font-family: var(--font-display); font-size: 11px; letter-spacing: 0.14em;
+  opacity: 0.85;
+  white-space: nowrap;
 }
 
 /* ========== Lyrics ========== */
@@ -705,7 +1092,7 @@ main {
 }
 .lyric-line {
   padding: 3px 6px; border-radius: 4px;
-  font-family: var(--font-mono); font-size: 16px; line-height: 1.5;
+  font-family: var(--font-body); font-size: 15px; line-height: 1.55;
   color: var(--ink-soft);
   letter-spacing: 0.02em;
 }
@@ -773,8 +1160,14 @@ main {
 .gen-section textarea {
   min-height: 110px; resize: vertical; line-height: 1.5;
 }
-.gen-section .row-2 { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; margin-bottom: 8px; }
-.gen-section .row-2 label { display: flex; flex-direction: column; gap: 4px; }
+.gen-section .row-2 {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(140px, 1fr));
+  gap: 8px; margin-bottom: 8px;
+}
+.gen-section .row-2 label { display: flex; flex-direction: column; gap: 4px; min-width: 0; }
+.gen-section .row-2 input,
+.gen-section .row-2 select { min-width: 0; max-width: 100%; }
 .gen-section .url-row { grid-template-columns: 1fr auto; align-items: stretch; }
 .gen-section .url-row .btn { white-space: nowrap; }
 .gen-section .button-row { display: flex; gap: 8px; flex-wrap: wrap; margin-top: 8px; }
@@ -790,17 +1183,43 @@ main {
 .gen-hero .section-h { color: var(--accent); }
 .gen-hero p, .gen-hero label, .gen-hero .muted, .gen-hero small { color: var(--lcd-dim); }
 .gen-hero .hero-row {
-  display: grid; grid-template-columns: 1fr auto;
-  gap: 8px; align-items: stretch;
+  display: flex; gap: 8px; align-items: stretch;
+  flex-wrap: wrap;
+  margin-top: 8px;
 }
-.gen-hero .hero-row-2 {
-  grid-template-columns: 1fr 1fr; margin-top: 6px;
-}
+.gen-hero .hero-row:first-child { margin-top: 0; }
+.gen-hero .hero-row > * { min-width: 0; }
+.gen-hero .hero-row select { flex: 1 1 100%; }
+.gen-hero .hero-row-buttons { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; }
+.gen-hero .hero-row-auto { display: block; }
+.gen-hero .hero-row-auto .btn { width: 100%; }
 .gen-hero select, .gen-hero textarea, .gen-hero input {
   background: var(--lcd-bg);
   color: var(--accent);
   border-color: var(--accent);
 }
+.aspect-row {
+  display: flex; align-items: center; gap: 10px; margin-top: 10px;
+}
+.aspect-label {
+  font-family: var(--font-display); font-size: 11px; letter-spacing: 0.18em;
+  color: var(--ink-mute);
+}
+.aspect-group {
+  display: inline-flex; gap: 0;
+  border: 2px solid var(--ink); border-radius: 999px; overflow: hidden;
+}
+.aspect-btn {
+  padding: 5px 14px;
+  font-family: var(--font-mono); font-size: 13px; letter-spacing: 0.06em;
+  background: var(--bg); color: var(--ink);
+  border: 0; border-right: 1px solid var(--ink);
+  cursor: pointer;
+}
+.aspect-btn:last-child { border-right: 0; }
+.aspect-btn:hover { background: var(--bg-2); }
+.aspect-btn.active { background: var(--ink); color: var(--accent); }
+
 .gen-hero .btn { background: var(--bg); color: var(--ink); border-color: var(--ink); }
 .gen-hero .btn.primary { background: var(--accent); color: var(--ink); border-color: var(--accent); }
 .gen-hero .btn.auto-btn {
@@ -1084,35 +1503,25 @@ textarea.notes-area {
   .halftone-overlay { display: none; }
 }
 
-/* ========== Dark mode ==========
-   Much darker. Text is mid-tone hue (not bright), bg is near-black tint.
-   No pure white anywhere. Selected hue carries through. */
+/* ========== Contrast mode ==========
+   Light-mode bg and palette stay exactly the same. The only thing that
+   changes: every black (text, outlines, cassette-deck panel, shadow tint)
+   is replaced with a *dark shade of the user's selected accent hue*. So
+   layout/depth/gradients are all preserved — this just retints the ink. */
 html[data-theme="dark"] {
-  --lig: 6%;                   /* near-black hue-tinted base */
-  --ink:       hsl(var(--hue), calc(var(--sat) + 15%), 58%);  /* mid-tone hue text — readable, not bright */
-  --ink-soft:  hsl(var(--hue), calc(var(--sat) + 10%), 48%);
-  --ink-mute:  hsla(var(--hue), calc(var(--sat) + 10%), 48%, 0.6);
-  --border:    hsl(var(--hue), calc(var(--sat) + 15%), 38%);
-  --shadow:    rgba(0,0,0,0.75);
-  /* Panels even darker than bg for proper "tape deck" contrast */
-  --panel:     hsl(var(--hue), calc(var(--sat) + 3%), 3%);
-  --panel-2:   hsl(var(--hue), calc(var(--sat) + 3%), 5%);
-  --bg-2:      hsl(var(--hue), var(--sat), calc(var(--lig) + 3%));
-  --bg-elev:   hsl(var(--hue), var(--sat), calc(var(--lig) + 5%));
-  --bg-hover:  hsl(var(--hue), var(--sat), calc(var(--lig) + 8%));
+  --ink:       hsl(var(--hue), var(--sat), 16%);
+  --ink-soft:  hsl(var(--hue), var(--sat), 26%);
+  --ink-mute:  hsla(var(--hue), var(--sat), 26%, 0.6);
+  --border:    hsl(var(--hue), var(--sat), 16%);
+  --panel:     hsl(var(--hue), var(--sat), 14%);
+  --panel-2:   hsl(var(--hue), var(--sat), 18%);
+  --shadow:    hsla(var(--hue), var(--sat), 14%, 0.22);
 }
-
-html[data-theme="dark"] body {
-  background-image:
-    radial-gradient(circle at 25% 30%, hsla(var(--hue), 60%, 50%, 0.06) 0, transparent 40%),
-    radial-gradient(circle at 75% 70%, rgba(0,0,0,0.4) 0, transparent 50%);
-}
-html[data-theme="dark"] .topbar { border-bottom-color: var(--ink); }
-html[data-theme="dark"] .sidedrawer { border-right-color: var(--ink); }
-html[data-theme="dark"] .meta { border-bottom-color: var(--ink); }
-html[data-theme="dark"] .player audio { filter: invert(1) hue-rotate(180deg) saturate(0.6); }
-html[data-theme="dark"] .channel-list a.active { background: var(--ink); color: var(--panel); }
-html[data-theme="dark"] .chip.ver { background: var(--ink); color: var(--panel); }
+/* (audio element is now hidden — custom .transport handles playback UI) */
+/* Contrast mode shares the light-mode palette and rules. The only difference
+   is that `--ink` / `--border` / `--panel` are dark hue-tinted shades instead
+   of pure black — so every existing rule that uses those vars (borders,
+   primary buttons, active chips, etc.) Just Works without per-theme overrides. */
 
 /* ========== Theme picker popover ========== */
 .theme-pop {

@@ -70,11 +70,11 @@ export const api = {
     const u = new URLSearchParams({ tool, kind, prompt });
     return req(`/api/songs/${songId}/gens/upload?${u}`, { method: "POST", body: fd });
   },
-  generateGen: (songId, tool, prompt) =>
+  generateGen: (songId, tool, prompt, aspect = "square") =>
     req(`/api/songs/${songId}/gens/generate`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ tool, prompt }),
+      body: JSON.stringify({ tool, prompt, aspect }),
     }),
   enqueueGen: (songId, tool) =>
     req(`/api/songs/${songId}/gens/enqueue`, {

@@ -653,6 +653,7 @@ def gen_sync(song_id: int, payload: dict = Body(...)):
     """Synchronously call a tool and persist the resulting gen."""
     tool = (payload or {}).get("tool", "")
     prompt = (payload or {}).get("prompt") or ""
+    aspect = (payload or {}).get("aspect", "square")
     if not tool:
         raise HTTPException(400, "tool required")
     s = _song_for_ai(song_id)
@@ -668,7 +669,7 @@ def gen_sync(song_id: int, payload: dict = Body(...)):
         )
         gen_id = cur.lastrowid
 
-    result = ai_generate_image(tool, prompt, song_id)
+    result = ai_generate_image(tool, prompt, song_id, aspect=aspect)
 
     with _db_lock:
         if "error" in result:

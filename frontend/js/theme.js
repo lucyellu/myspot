@@ -11,6 +11,7 @@ const PRESETS = [
   { name: "sage",   hue: 80,  sat: 25, lig: 60 },
   { name: "rose",   hue: 350, sat: 30, lig: 65 },
   { name: "amber",  hue: 38,  sat: 50, lig: 62 },
+  { name: "yellow", hue: 48,  sat: 65, lig: 70 },
   { name: "teal",   hue: 175, sat: 30, lig: 55 },
   { name: "violet", hue: 270, sat: 25, lig: 60 },
   { name: "slate",  hue: 220, sat: 12, lig: 55 },
@@ -34,6 +35,8 @@ function applyTheme(t) {
   const root = document.documentElement;
   root.style.setProperty("--hue", String(t.hue));
   root.style.setProperty("--sat", `${t.sat}%`);
+  // Both modes use the same light bg — contrast mode only swaps black ink/
+  // borders/panels for a dark hue-tinted shade. So --lig is always honored.
   root.style.setProperty("--lig", `${t.lig}%`);
   root.setAttribute("data-theme", t.dark ? "dark" : "light");
 }
@@ -81,7 +84,9 @@ export function bindThemePopover() {
   }
   function syncFromState() {
     hue.value = _t.hue; sat.value = _t.sat; lig.value = _t.lig;
-    toggle.textContent = _t.dark ? "LIGHT MODE" : "DARK MODE";
+    // Renamed from "DARK MODE" — the user thinks of this as a contrast boost
+    // toggle, not a light/dark distinction.
+    toggle.textContent = _t.dark ? "NORMAL MODE" : "CONTRAST MODE";
     updateSwatch();
   }
 
@@ -102,7 +107,7 @@ export function bindThemePopover() {
 
   toggle.onclick = () => {
     setTheme({ dark: !_t.dark });
-    toggle.textContent = _t.dark ? "LIGHT MODE" : "DARK MODE";
+    toggle.textContent = _t.dark ? "NORMAL MODE" : "CONTRAST MODE";
   };
   reset.onclick = () => {
     setTheme({ ...DEFAULTS });
