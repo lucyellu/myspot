@@ -11,13 +11,18 @@ export async function renderHome({ account = null, q = null } = {}) {
 
   const titleEl = document.getElementById("home-title");
   if (q) titleEl.textContent = `Search: ${q}`;
-  else if (account) titleEl.textContent = fmtAccount(account);
-  else titleEl.textContent = "Recent";
+  else if (account) titleEl.textContent = fmtAccount(account).toUpperCase();
+  else titleEl.textContent = "ALL CHANNELS";
 
   const grid = document.getElementById("grid");
   const status = document.getElementById("grid-status");
   const more = document.getElementById("btn-more");
   const sortSel = document.getElementById("home-sort");
+
+  // Default sort: most-played for top-level, recent for channel/search views
+  if (!account && !q && [...sortSel.options].some(o => o.value === "popular")) {
+    sortSel.value = "popular";
+  }
   let sort = sortSel.value;
   let offset = 0;
   let total = 0;
@@ -31,13 +36,42 @@ export async function renderHome({ account = null, q = null } = {}) {
     offset += data.items.length;
     status.textContent = `${offset.toLocaleString()} / ${total.toLocaleString()}`;
     more.disabled = offset >= total;
-    more.textContent = offset >= total ? "All loaded" : "Load more";
+    more.textContent = offset >= total ? "ALL LOADED" : "LOAD MORE";
   }
 
   more.onclick = () => loadPage(false);
   sortSel.onchange = () => { sort = sortSel.value; loadPage(true); };
 
   await loadPage(true);
+
+  // Add a "RECENT ASSETS" strip at the bottom of the home view so users can
+  // navigate songs + assets in one place.
+  if (!q && !account) {
+    await renderAssetsStrip(view);
+  }
+}
+
+async function renderAssetsStrip(view) {
+  let folders = [];
+  try { folders = await api.assetFolders(); } catch { return; }
+  const realFolders = folders.filter((f) => f.folder !== "_gens");
+  if (!realFolders.length) return;
+
+  const wrap = el("section", { class: "home-assets-strip" });
+  wrap.append(el("h2", { class: "home-section-h" }, "ASSET FOLDERS"));
+  const row = el("div", { class: "home-folder-row" });
+  // _gens chip first, then real folders
+  const gensChip = el("a", { class: "folder-chip", href: "#/assets/_gens" });
+  const gensFolder = folders.find((f) => f.folder === "_gens");
+  gensChip.innerHTML = `<strong>📁 GENS</strong><span class="muted small">${(gensFolder?.n || 0).toLocaleString()} files</span>`;
+  row.append(gensChip);
+  for (const f of realFolders.slice(0, 12)) {
+    const a = el("a", { class: "folder-chip", href: `#/assets/${encodeURIComponent(f.folder)}` });
+    a.innerHTML = `<strong>${f.folder.slice(0, 28)}</strong><span class="muted small">${f.n.toLocaleString()} files</span>`;
+    row.append(a);
+  }
+  wrap.append(row);
+  view.append(wrap);
 }
 
 export function card(s) {

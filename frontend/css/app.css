@@ -40,7 +40,7 @@
 
   --topbar-h:  56px;
   --drawer-w:  240px;
-  --side-w:    380px;
+  --side-w:    460px;
 
   --font-pixel: "VT323", "Press Start 2P", "Courier New", ui-monospace, monospace;
   --font-display: "Pixelify Sans", "VT323", system-ui, sans-serif;
@@ -222,6 +222,32 @@ main {
 .btn.primary { background: var(--ink); color: var(--accent); }
 .btn.primary:hover { background: #1a1a1a; }
 .btn.big { font-size: 14px; padding: 11px 22px; }
+
+/* ========== Home assets strip ========== */
+.home-assets-strip { margin-top: 36px; padding-top: 24px; border-top: 2px solid var(--ink); }
+.home-section-h {
+  margin: 0 0 12px;
+  font-family: var(--font-display);
+  font-size: 14px; letter-spacing: 0.18em;
+  color: var(--ink);
+}
+.home-folder-row {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(180px, 1fr));
+  gap: 10px;
+}
+.folder-chip {
+  display: flex; flex-direction: column; gap: 2px;
+  padding: 12px 14px;
+  background: var(--bg-2);
+  border: 2px solid var(--ink); border-radius: var(--radius-sm);
+  font-family: var(--font-mono); font-size: 13px; letter-spacing: 0.04em;
+  cursor: pointer;
+}
+.folder-chip:hover { background: var(--bg-elev); }
+.folder-chip strong {
+  font-family: var(--font-display); font-size: 14px; letter-spacing: 0.06em;
+}
 
 /* ========== Card ========== */
 .card { display: flex; flex-direction: column; gap: 8px; cursor: pointer; }
@@ -608,20 +634,30 @@ main {
 
 /* ========== Sidepanel — FM dial style ========== */
 .sidepanel {
-  position: sticky; top: calc(var(--topbar-h) + 24px);
+  position: sticky; top: calc(var(--topbar-h) + 16px);
   background: var(--bg);
   border: 3px solid var(--ink);
   border-radius: var(--radius-lg);
   display: flex; flex-direction: column;
-  /* Generous cap. Tab body scrolls internally if a tab needs more. */
-  max-height: calc(100vh - var(--topbar-h) - 36px);
+  /* Almost full viewport — minimal buffer to maximize content. */
+  height: calc(100vh - var(--topbar-h) - 24px);
   overflow: hidden;
   box-shadow: 0 6px 0 var(--ink), 0 10px 20px var(--shadow);
   align-self: start;
 }
-@media (min-height: 900px) {
-  .sidepanel { max-height: calc(100vh - var(--topbar-h) - 48px); }
+.tab-body {
+  padding: 16px;
+  flex: 1 1 auto; min-height: 0;
+  overflow-y: auto;
+  /* Hide scrollbar by default; show on hover */
+  scrollbar-width: thin;
 }
+.tab-body::-webkit-scrollbar { width: 8px; }
+.tab-body::-webkit-scrollbar-thumb {
+  background: var(--ink); border-radius: 4px;
+  opacity: 0; transition: opacity .2s;
+}
+.tab-body:hover::-webkit-scrollbar-thumb { opacity: 1; }
 .tabs.fm-dial {
   background: var(--panel);
   border-bottom: 2px solid var(--ink);
@@ -669,10 +705,6 @@ main {
 .fm-name {
   font-family: var(--font-mono); font-size: 9px; letter-spacing: 0.12em;
   opacity: 0.7;
-}
-.tab-body {
-  padding: 16px;
-  flex: 1; overflow-y: auto;
 }
 
 /* ========== Lyrics ========== */
@@ -1063,59 +1095,37 @@ textarea.notes-area {
   .halftone-overlay { display: none; }
 }
 
-/* ========== Dark mode ========== */
+/* ========== Dark mode ==========
+   Derives text + bg from the user-selected hue:
+     bg   = same hue, very dark
+     text = same hue, very light (the ink IS the accent)
+   No pure white. Selected color carries through both modes. */
 html[data-theme="dark"] {
-  --lig: 18%;                  /* very dark base */
-  --ink:       #e8e8ec;        /* light text */
-  --ink-soft:  #c8c8d0;
-  --ink-mute:  rgba(232,232,236,0.55);
-  --border:    #e8e8ec;
-  --shadow:    rgba(0,0,0,0.55);
-  --panel:     #f4f4f0;        /* invert: light "tape deck" */
-  --panel-2:   #d8d8d0;
-  --bg-2:      hsl(var(--hue), var(--sat), calc(var(--lig) + 6%));
-  --bg-elev:   hsl(var(--hue), var(--sat), calc(var(--lig) + 12%));
-  --bg-hover:  hsl(var(--hue), var(--sat), calc(var(--lig) + 16%));
+  --lig: 12%;                  /* very dark hue-tinted base */
+  --ink:       hsl(var(--hue), calc(var(--sat) + 25%), 82%);  /* light hue-tinted text */
+  --ink-soft:  hsl(var(--hue), calc(var(--sat) + 20%), 70%);
+  --ink-mute:  hsla(var(--hue), calc(var(--sat) + 20%), 75%, 0.55);
+  --border:    hsl(var(--hue), calc(var(--sat) + 20%), 60%);
+  --shadow:    rgba(0,0,0,0.6);
+  /* Tape-deck panels become deeper of the hue (slightly darker than bg) */
+  --panel:     hsl(var(--hue), calc(var(--sat) + 5%), 6%);
+  --panel-2:   hsl(var(--hue), calc(var(--sat) + 5%), 9%);
+  --bg-2:      hsl(var(--hue), var(--sat), calc(var(--lig) + 5%));
+  --bg-elev:   hsl(var(--hue), var(--sat), calc(var(--lig) + 9%));
+  --bg-hover:  hsl(var(--hue), var(--sat), calc(var(--lig) + 14%));
 }
 
 html[data-theme="dark"] body {
   background-image:
-    radial-gradient(circle at 25% 30%, rgba(255,255,255,0.03) 0, transparent 40%),
-    radial-gradient(circle at 75% 70%, rgba(0,0,0,0.30) 0, transparent 50%);
+    radial-gradient(circle at 25% 30%, hsla(var(--hue), 60%, 50%, 0.06) 0, transparent 40%),
+    radial-gradient(circle at 75% 70%, rgba(0,0,0,0.4) 0, transparent 50%);
 }
-html[data-theme="dark"] .ico-btn,
-html[data-theme="dark"] .btn,
-html[data-theme="dark"] .chip,
-html[data-theme="dark"] .chip-btn,
-html[data-theme="dark"] .cat-chip {
-  background: var(--bg-2); color: var(--ink); border-color: var(--ink);
-}
-html[data-theme="dark"] .ico-btn:hover,
-html[data-theme="dark"] .btn:hover,
-html[data-theme="dark"] .chip-btn:hover,
-html[data-theme="dark"] .cat-chip:hover { background: var(--bg-hover); }
-html[data-theme="dark"] .btn.primary { background: var(--accent); color: #0e0e0e; }
-html[data-theme="dark"] .chip.ver { background: var(--accent); color: #0e0e0e; }
-html[data-theme="dark"] .chip-btn.liked { background: var(--accent-2); color: #0e0e0e; }
-html[data-theme="dark"] .cat-chip.active { background: var(--accent); color: #0e0e0e; }
-
-html[data-theme="dark"] .search { color: var(--accent); border-color: var(--accent); }
-html[data-theme="dark"] .player audio { filter: invert(0); }
-html[data-theme="dark"] .card .thumb,
-html[data-theme="dark"] .track-clip,
-html[data-theme="dark"] .media-tray-tile,
-html[data-theme="dark"] .gen-item,
-html[data-theme="dark"] .player {
-  border-color: var(--accent);
-}
-html[data-theme="dark"] .gen-advanced > summary { background: var(--bg-elev); color: var(--ink); }
-html[data-theme="dark"] .gen-advanced[open] > summary { background: var(--bg-hover); }
-html[data-theme="dark"] .help-card { background: var(--bg-2); }
-html[data-theme="dark"] .topbar { border-bottom-color: var(--accent); }
-html[data-theme="dark"] .sidedrawer { border-right-color: var(--accent); }
-html[data-theme="dark"] .meta { border-bottom-color: var(--accent); }
-html[data-theme="dark"] .channel-list a:hover { background: var(--bg-hover); border-color: var(--accent); }
-html[data-theme="dark"] .channel-list a.active { background: var(--accent); color: #0e0e0e; }
+html[data-theme="dark"] .topbar { border-bottom-color: var(--ink); }
+html[data-theme="dark"] .sidedrawer { border-right-color: var(--ink); }
+html[data-theme="dark"] .meta { border-bottom-color: var(--ink); }
+html[data-theme="dark"] .player audio { filter: invert(1) hue-rotate(180deg) saturate(0.6); }
+html[data-theme="dark"] .channel-list a.active { background: var(--ink); color: var(--panel); }
+html[data-theme="dark"] .chip.ver { background: var(--ink); color: var(--panel); }
 
 /* ========== Theme picker popover ========== */
 .theme-pop {
