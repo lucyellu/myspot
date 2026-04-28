@@ -1,0 +1,34 @@
+# Netlify build / deploy config for myspot's static frontend.
+#
+# This deploys the contents of `frontend/` as the site root. The FastAPI
+# backend in `backend/` cannot run on Netlify — it needs a long-lived Python
+# process and disk access to your music library — so a deployed site loads
+# the UI shell only. To make it work, point window.MYSPOT_API_BASE at a
+# reachable backend (Cloudflare tunnel, Fly.io, Railway, VPS).
+#
+# See frontend/config.example.js for how to set the API base URL.
+
+[build]
+  publish = "frontend"
+  # No build step — pure HTML/CSS/JS, served as-is.
+  command = ""
+
+# Map the FastAPI-style `/static/*` path that index.html references to the
+# corresponding files at the frontend root, so we don't have to rewrite
+# every src/href in HTML for both deploy targets.
+[[redirects]]
+  from = "/static/*"
+  to = "/:splat"
+  status = 200
+
+# SPA fallback: any unknown path (other than /api/*) returns index.html so
+# bookmark links like /song/2392 resolve. The hash router handles the rest.
+[[redirects]]
+  from = "/api/*"
+  to = "/api/:splat"
+  status = 404
+
+[[redirects]]
+  from = "/*"
+  to = "/index.html"
+  status = 200

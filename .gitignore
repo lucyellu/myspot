@@ -1,3 +1,6 @@
+# Per-deploy runtime config (sets window.MYSPOT_API_BASE for Netlify etc.)
+frontend/config.js
+
 __pycache__/
 *.pyc
 *.pyo

@@ -1,4 +1,13 @@
-const BASE = "";
+// API base URL.
+//
+// Local dev: backend serves the frontend, so BASE = "" (same-origin).
+// Netlify / static host: backend lives elsewhere — set window.MYSPOT_API_BASE
+// in /static/config.js (loaded before main.js) or ?api=URL for ad-hoc.
+const _qs = new URLSearchParams(location.search);
+const BASE =
+  _qs.get("api") ||
+  (typeof window !== "undefined" && window.MYSPOT_API_BASE) ||
+  "";
 
 async function req(path, opts = {}) {
   const r = await fetch(BASE + path, opts);
