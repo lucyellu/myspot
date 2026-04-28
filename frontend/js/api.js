@@ -14,16 +14,18 @@ async function req(path, opts = {}) {
 export const api = {
   stats: () => req("/api/stats"),
   channels: () => req("/api/channels"),
-  songs: ({ account = null, q = null, limit = 60, offset = 0, sort = "recent" } = {}) => {
+  songs: ({ account = null, q = null, tag = null, limit = 60, offset = 0, sort = "recent" } = {}) => {
     // sort ∈ recent | title | version | popular | liked | gens | recent_played
     const u = new URLSearchParams();
     if (account) u.set("account", account);
     if (q) u.set("q", q);
+    if (tag) u.set("tag", tag);
     u.set("limit", limit);
     u.set("offset", offset);
     u.set("sort", sort);
     return req(`/api/songs?${u}`);
   },
+  smartTags: () => req("/api/smart-tags"),
   topSongs: ({ by = "popular", limit = 20, account = null } = {}) => {
     const u = new URLSearchParams({ by, limit });
     if (account) u.set("account", account);

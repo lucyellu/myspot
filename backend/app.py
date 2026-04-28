@@ -92,6 +92,7 @@ def list_channels():
 def list_songs(
     account: str | None = None,
     q: str | None = None,
+    tag: str | None = None,
     limit: int = Query(60, ge=1, le=500),
     offset: int = Query(0, ge=0),
     sort: str = Query("recent", regex="^(recent|title|version|popular|liked|gens|recent_played)$"),
@@ -109,6 +110,11 @@ def list_songs(
         )
         like = f"%{q}%"
         args.extend([like, like, like, _fts_query(q)])
+    if tag:
+        clause, params = _tag_clause(tag)
+        if clause:
+            where.append(clause)
+            args.extend(params)
 
     order = {
         "recent": "s.id DESC",
@@ -140,6 +146,59 @@ def list_songs(
     total = _conn.execute(count_sql, args[:-2] if where else []).fetchone()[0]
 
     return {"items": _rows(rows), "total": total, "limit": limit, "offset": offset}
+
+
+# Smart-playlist tag definitions. Each is a list of LIKE patterns matched
+# against song.title (case-insensitive via SQLite LIKE default). Patterns are
+# ORed together; a song matches a tag if any pattern hits.
+#
+# Patterns use SQLite LIKE wildcards (% = any). We bracket key words with
+# spaces / parens / brackets / dashes so a song like "Live at Madison" hits
+# but "Olive Branch" does not. All patterns are lowercase to leverage LIKE's
+# default ASCII case-insensitivity in SQLite.
+_TAG_PATTERNS = {
+    "live": [
+        "% live %", "% live", "live %",        # word boundaries around "live"
+        "%(live%)%", "%[live%]%",                # "(live)", "[live]"
+        "% live at %", "% live in %", "% live from %",
+        "%concert%", "%performance%",
+    ],
+    "acoustic":     ["%acoustic%", "%(acoustic)%", "%unplugged%"],
+    "remix":        ["%remix%", "%(remix)%", "%(rmx)%"],
+    "instrumental": ["%instrumental%", "%(instrumental)%", "%(inst)%"],
+    "demo":         ["%demo%", "%(demo)%"],
+    "cover":        ["% cover %", "% cover", "%(cover)%", "%covered by%"],
+    "remastered":   ["%remaster%", "%(remaster%)%"],
+}
+
+
+def _tag_clause(tag: str):
+    """Return (sql_clause, params) for a smart-playlist tag, or (None, []) if
+    the tag isn't known. The clause filters by title only — using lyrics or
+    genre would surface too many false positives (e.g. lyrics mentioning
+    'live' on songs that are studio recordings)."""
+    pats = _TAG_PATTERNS.get(tag.lower())
+    if not pats:
+        return (None, [])
+    placeholders = " OR ".join(["LOWER(s.title) LIKE ?"] * len(pats))
+    return (f"({placeholders})", [p.lower() for p in pats])
+
+
+@app.get("/api/smart-tags")
+def smart_tag_counts():
+    """Return per-tag counts so the side drawer can show how many songs each
+    smart playlist contains."""
+    out = []
+    for name in _TAG_PATTERNS:
+        clause, params = _tag_clause(name)
+        if not clause:
+            continue
+        n = _conn.execute(
+            f"SELECT COUNT(*) FROM songs s WHERE {clause}", params
+        ).fetchone()[0]
+        out.append({"tag": name, "n": n})
+    out.sort(key=lambda r: -r["n"])
+    return out
 
 
 def _fts_query(q: str) -> str:

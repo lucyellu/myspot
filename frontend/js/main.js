@@ -62,6 +62,37 @@ async function loadAssetFolders() {
   } catch { /* ignore */ }
 }
 
+async function loadSmartTags() {
+  const list = document.getElementById("smart-tag-list");
+  const countEl = document.getElementById("drawer-smart-n");
+  if (!list) return;
+  list.innerHTML = "";
+  try {
+    const tags = await api.smartTags();
+    const non_zero = tags.filter((t) => t.n > 0);
+    if (countEl) countEl.textContent = String(non_zero.length);
+    if (!non_zero.length) {
+      list.innerHTML = `<div class="muted" style="padding:6px 10px">No songs match yet — pattern detection is title-based.</div>`;
+      return;
+    }
+    for (const t of non_zero) {
+      const a = document.createElement("a");
+      a.href = `#/tag/${encodeURIComponent(t.tag)}`;
+      a.dataset.tag = t.tag;
+      const emoji =
+        t.tag === "live" ? "🎤" :
+        t.tag === "acoustic" ? "🎸" :
+        t.tag === "remix" ? "🎛️" :
+        t.tag === "instrumental" ? "🎼" :
+        t.tag === "demo" ? "🪞" :
+        t.tag === "cover" ? "🔁" :
+        t.tag === "remastered" ? "✨" : "🏷️";
+      a.innerHTML = `<span class="count">${t.n.toLocaleString()}</span>${emoji} ${t.tag.toUpperCase()}`;
+      list.append(a);
+    }
+  } catch { /* ignore */ }
+}
+
 async function loadStats() {
   try {
     const s = await api.stats();
@@ -93,6 +124,9 @@ async function route() {
     await renderWatch(parseInt(parts[1], 10));
   } else if (parts[0] === "search" && parts[1]) {
     await renderHome({ q: decodeURIComponent(parts[1]) });
+  } else if (parts[0] === "tag" && parts[1]) {
+    highlightActiveChannel(null);
+    await renderHome({ tag: decodeURIComponent(parts[1]) });
   } else if (parts[0] === "assets") {
     const folder = parts[1] ? decodeURIComponent(parts[1]) : null;
     await renderAssets({ folder });
@@ -156,6 +190,6 @@ window.addEventListener("DOMContentLoaded", async () => {
   bindGlobal();
   bindHelp();
   bindThemePopover();
-  await Promise.all([loadChannels(), loadAssetFolders(), loadStats()]);
+  await Promise.all([loadChannels(), loadAssetFolders(), loadSmartTags(), loadStats()]);
   await route();
 });

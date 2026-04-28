@@ -3,7 +3,18 @@ import { fmtDuration, fmtAccount, el, clear } from "../util.js";
 
 const PAGE = 60;
 
-export async function renderHome({ account = null, q = null } = {}) {
+// Persisted view state — density (px min-col width) + grid/list mode.
+const STORE_KEY = "myspot.home.v1";
+const DEFAULTS = { size: 110, view: "grid" };
+function loadHomePrefs() {
+  try { return { ...DEFAULTS, ...(JSON.parse(localStorage.getItem(STORE_KEY) || "{}")) }; }
+  catch { return { ...DEFAULTS }; }
+}
+function saveHomePrefs(p) {
+  try { localStorage.setItem(STORE_KEY, JSON.stringify(p)); } catch { /* ignore */ }
+}
+
+export async function renderHome({ account = null, q = null, tag = null } = {}) {
   const view = document.getElementById("view");
   clear(view);
   const tpl = document.getElementById("tpl-home").content.cloneNode(true);
@@ -11,6 +22,7 @@ export async function renderHome({ account = null, q = null } = {}) {
 
   const titleEl = document.getElementById("home-title");
   if (q) titleEl.textContent = `Search: ${q}`;
+  else if (tag) titleEl.textContent = `🎤 ${tag.toUpperCase()}`;
   else if (account) titleEl.textContent = fmtAccount(account).toUpperCase();
   else titleEl.textContent = "ALL CHANNELS";
 
@@ -18,11 +30,42 @@ export async function renderHome({ account = null, q = null } = {}) {
   const status = document.getElementById("grid-status");
   const more = document.getElementById("btn-more");
   const sortSel = document.getElementById("home-sort");
+  const sizeSel = document.getElementById("home-size");
+  const viewBtns = document.querySelectorAll(".view-btn");
 
   // Default sort: most-played for top-level, recent for channel/search views
   if (!account && !q && [...sortSel.options].some(o => o.value === "popular")) {
     sortSel.value = "popular";
   }
+
+  // Hydrate size + view-mode from localStorage
+  const prefs = loadHomePrefs();
+  const applySize = (px) => {
+    grid.style.setProperty("--card-min", `${px}px`);
+  };
+  const applyView = (mode) => {
+    grid.classList.toggle("list-mode", mode === "list");
+    viewBtns.forEach((b) => b.classList.toggle("active", b.dataset.view === mode));
+  };
+  if (sizeSel) {
+    sizeSel.value = String(prefs.size);
+    applySize(prefs.size);
+    sizeSel.addEventListener("input", () => {
+      const v = parseInt(sizeSel.value, 10);
+      applySize(v);
+      prefs.size = v;
+      saveHomePrefs(prefs);
+    });
+  }
+  applyView(prefs.view);
+  viewBtns.forEach((b) => {
+    b.onclick = () => {
+      prefs.view = b.dataset.view;
+      saveHomePrefs(prefs);
+      applyView(prefs.view);
+    };
+  });
+
   let sort = sortSel.value;
   let offset = 0;
   let total = 0;
@@ -30,7 +73,7 @@ export async function renderHome({ account = null, q = null } = {}) {
   async function loadPage(reset = false) {
     if (reset) { clear(grid); offset = 0; }
     status.textContent = "Loading...";
-    const data = await api.songs({ account, q, limit: PAGE, offset, sort });
+    const data = await api.songs({ account, q, tag, limit: PAGE, offset, sort });
     total = data.total;
     for (const s of data.items) grid.append(card(s));
     offset += data.items.length;

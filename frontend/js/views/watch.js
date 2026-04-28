@@ -32,6 +32,9 @@ export async function renderWatch(songId) {
   clear(view);
   const tpl = document.getElementById("tpl-watch").content.cloneNode(true);
   view.append(tpl);
+  // Snap to top so the player is in view immediately, regardless of where
+  // the user was scrolled in the previous (home / search / channel) page.
+  window.scrollTo({ top: 0, behavior: "instant" });
 
   const song = await api.song(songId);
   if (!song) { view.innerHTML = "<p class='empty-state'>Song not found.</p>"; return; }

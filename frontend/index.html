@@ -41,6 +41,10 @@
 </div>
 
 <aside class="sidedrawer" id="sidedrawer">
+  <details class="drawer-section" id="drawer-smart" open>
+    <summary><span class="drawer-section-h">SMART</span><span class="drawer-section-n" id="drawer-smart-n"></span></summary>
+    <div id="smart-tag-list" class="channel-list"></div>
+  </details>
   <details class="drawer-section" id="drawer-channels">
     <summary><span class="drawer-section-h">CHANNELS</span><span class="drawer-section-n" id="drawer-channels-n"></span></summary>
     <div id="channel-list" class="channel-list"></div>
@@ -57,8 +61,8 @@
   <section class="home">
     <div class="home-header">
       <h1 id="home-title">RECENT</h1>
-      <div class="sort-group">
-        <label>SORT
+      <div class="home-controls">
+        <label class="control-group">SORT
           <select id="home-sort">
             <option value="recent">RECENT</option>
             <option value="popular">POPULAR</option>
@@ -69,6 +73,13 @@
             <option value="version">VERSION</option>
           </select>
         </label>
+        <label class="control-group control-size">SIZE
+          <input type="range" id="home-size" min="70" max="280" step="10" />
+        </label>
+        <div class="control-group view-toggle" role="radiogroup" aria-label="View mode">
+          <button type="button" class="view-btn" data-view="grid" title="Grid view">▦</button>
+          <button type="button" class="view-btn" data-view="list" title="List view">☰</button>
+        </div>
       </div>
     </div>
     <div class="grid" id="grid"></div>

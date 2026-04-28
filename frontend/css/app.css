@@ -246,8 +246,10 @@ main {
 
 /* ========== Home / grid ========== */
 .home-header {
-  display: flex; align-items: baseline; justify-content: space-between;
+  display: flex; align-items: center; justify-content: space-between;
+  gap: 14px;
   margin-bottom: 18px;
+  flex-wrap: wrap;
 }
 .home-header h1 {
   margin: 0;
@@ -256,18 +258,95 @@ main {
   font-weight: 700;
   letter-spacing: 0.06em;
 }
-.sort-group label { font-family: var(--font-display); font-size: 13px; letter-spacing: 0.16em; }
-.sort-group select {
+.home-controls {
+  display: flex; align-items: center; gap: 12px;
+  flex-wrap: wrap;
+}
+.control-group {
+  display: inline-flex; align-items: center; gap: 8px;
+  font-family: var(--font-display); font-size: 13px; letter-spacing: 0.16em;
+  color: var(--ink-soft);
+}
+.control-group select {
   background: var(--panel); color: var(--accent);
   border: 2px solid var(--ink); border-radius: var(--radius-sm);
   padding: 4px 10px;
   font-family: var(--font-mono); font-size: 14px; letter-spacing: 0.06em;
-  margin-left: 8px;
 }
+.control-group input[type="range"] {
+  width: 110px; accent-color: var(--accent);
+}
+.view-toggle {
+  display: inline-flex; gap: 0;
+  border: 2px solid var(--ink); border-radius: var(--radius-sm);
+  overflow: hidden;
+}
+.view-btn {
+  background: var(--bg);
+  color: var(--ink);
+  border: 0; border-right: 1px solid var(--ink);
+  padding: 4px 10px;
+  font-size: 16px; line-height: 1;
+  cursor: pointer;
+}
+.view-btn:last-child { border-right: 0; }
+.view-btn:hover { background: var(--bg-2); }
+.view-btn.active { background: var(--ink); color: var(--accent); }
 .grid {
+  --card-min: 110px;
   display: grid;
-  grid-template-columns: repeat(auto-fill, minmax(110px, 1fr));
+  grid-template-columns: repeat(auto-fill, minmax(var(--card-min), 1fr));
   gap: 10px;
+}
+/* List mode — Spotify/YT-playlist style: thumb + title + meta + duration. */
+.grid.list-mode {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+.grid.list-mode .card {
+  display: grid;
+  grid-template-columns: 48px 1fr auto;
+  align-items: center;
+  gap: 12px;
+  padding: 6px 10px;
+  border-radius: var(--radius-sm);
+  border: 1px solid transparent;
+  flex-direction: row;
+}
+.grid.list-mode .card:hover {
+  background: var(--bg-2);
+  border-color: var(--border);
+}
+.grid.list-mode .thumb {
+  aspect-ratio: 1/1;
+  width: 48px; height: 48px;
+  border-width: 1px;
+  border-radius: 4px;
+}
+.grid.list-mode .card-version,
+.grid.list-mode .card-duration,
+.grid.list-mode .card-liked { display: none; }
+.grid.list-mode .card-body {
+  display: contents;
+}
+.grid.list-mode .card-title {
+  font-size: 14px;
+  letter-spacing: 0.02em;
+  -webkit-line-clamp: 1; line-clamp: 1;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.grid.list-mode .card-sub {
+  font-size: 12px;
+  -webkit-line-clamp: 1; line-clamp: 1;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  text-align: right;
+  color: var(--ink-mute);
+  font-family: var(--font-mono);
 }
 .grid-footer {
   display: flex; align-items: center; gap: 14px;
