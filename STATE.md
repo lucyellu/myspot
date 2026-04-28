@@ -4,19 +4,15 @@
 
 ## 🎯 PICK UP HERE
 
-**Current focus:** Frontend redesign in flight via Claude (the design tool).
-- The user fed [DESIGN-BRIEF.md](./DESIGN-BRIEF.md) to Claude design.
-- Claude's questions answered (see "Redesign decisions" at bottom of DESIGN-BRIEF.md): **lime primary**, drop family tree (keep as AI-sheet tab), Auto = one-tap with toast progress, search = full-screen sheet, drop anywhere on visual.
-- Awaiting Claude's file output. When it lands:
-  1. `cp -r frontend frontend.bak` (or `mv frontend frontend.bak`)
-  2. Paste new files into `frontend/`
-  3. Hard-refresh browser at `http://127.0.0.1:7777/`
-  4. Walk the 14-point validation checklist at the bottom of DESIGN-BRIEF.md
-  5. Run `python -m tests.test_smoke` (backend-only, should stay 37/37)
+**Repo:** https://github.com/lucyellu/myspot — initial commit `a5e48a5` pushed to `main`. Backend identity: `lucyellu` / `lucylu.contact@gmail.com` (repo-local config). 64 tracked files; `.env`, `secrets/`, `assets/*`, `data/myspot.db`, all `*.bak`, `data/gens/*`, `data/exports/*` all gitignored.
 
-**Backend is stable.** No backend work pending. Server runs at `http://127.0.0.1:7777/`. Desktop shortcut `myspot.lnk` launches it.
+**Active redesign track:** in-house **cassette/radio aesthetic** (sage green HSL, VT323 pixel typography, halftone Web Audio visualizer, FM-dial sidepanel tabs, LCD time/BPM readouts) is **shipped and live** on `frontend/`. Original dark theme backed up at `frontend/css/app.dark.css.bak` and `frontend/index.dark.html.bak`. Claude design was given DESIGN-BRIEF.md and may return alternative files later — drop-in compatible with the same backend.
 
-**Funded API balances:** DeepSeek $5, Google AI Studio $25. Pollinations FLUX (free unlimited) is the default image tool — costs nothing.
+**Theme system:** hue picker + dark mode toggle (◐ button in topbar). HSL-based palette so `--hue / --sat / --lig` set via JS remap the entire UI. 6 preset hue chips. Persisted in `localStorage` under `myspot.theme.v1`.
+
+**Backend stable.** No pending backend work. Server runs at `http://127.0.0.1:7777/`. Desktop shortcut `myspot.lnk` launches it. New gradient music-note icon (replaces the pink one).
+
+**Funded API balances:** DeepSeek $5, Google AI Studio $25. Pollinations FLUX (free unlimited) is the default image tool.
 
 ---
 
@@ -240,7 +236,17 @@ CORS middleware on `/api/extension/*` so MV3 service worker can call `localhost:
 
 ## Recent additions (since last STATE update)
 
-- **Sortability** — `liked` column on songs; new sort modes: popular, liked, gens, recent_played; `GET /api/songs/top` curated lists; `POST /api/songs/{id}/like` and `/play` endpoints
+- **GitHub** — repo at https://github.com/lucyellu/myspot, initial commit pushed
+- **Cassette/radio frontend redesign** — sage HSL palette + VT323 pixel typography + halftone Web Audio visualizer + FM-dial sidepanel tabs + LCD readouts
+- **Theme system** — `frontend/js/theme.js` + ◐ topbar button. Hue / sat / lig sliders + 6 preset chips + dark mode toggle. Persisted in localStorage.
+- **Sidepanel height** — bumped max-height + sticky-aligned to start so it grows with content; tab body scrolls internally only on overflow.
+- **Slideshow exports as gens** — render writes MP4 to `data/gens/song{id}_{ms}_export.mp4` AND inserts a gens row (`tool='export'`). Surfaces in the media tray under "Gens (output)". Backward-compat copy still written to `data/exports/song_{id}.mp4`.
+- **Prompts vault: optional name + auto tags** — `prompts.tags` column. POST without `name` auto-derives from template (first sentence + short hex). POST without `tags` auto-extracts from a curated keyword list. New `GET /api/prompt-tags` endpoint exposes the curated list.
+- **Tag chips in Generate tab** — collapsible "Style chips" panel with one-click append: cinematographers, MV aesthetics, camera/film stock, concert moods, lighting/palette.
+- **Enhanced art-director system prompt** — Gemini/DeepSeek/Claude all now compose 180-260 word prompts MUST citing a specific cinematographer/director, a film/MV touchpoint, a camera/film-stock cue, plus concrete lighting+palette+composition+mood.
+- **New app icon** — gradient music-note replacing the pink note. Multi-res ICO + Chrome extension PNGs regenerated. Old icon at `icon.old.ico.bak`.
+- **LICENSE (MIT) + curated .gitignore** — `assets/*`, `*.bak`, `secrets/`, `.env`, db, gens, exports all excluded from version control.
+- **Sortability** — `liked` column on songs; new sort modes: popular, liked, gens, recent_played; `GET /api/top-songs` curated lists; `POST /api/songs/{id}/like` and `/play` endpoints
 - **Chrome extension bridge** — `extension/` folder, MV3, right-click any image → "Send to myspot." Includes per-site corner pill for visual feedback. New backend endpoints under `/api/extension/`.
 - **Pollinations 4 variants** (FLUX.dev, Realism, Anime, Turbo) — all free unlimited
 - **🚀 Auto pipeline** — `POST /api/songs/{id}/auto` chooses cheapest available text + image tools and runs the full enhance + N-generate cycle

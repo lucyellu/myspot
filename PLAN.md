@@ -6,19 +6,19 @@ Status: ✅ done · 🟡 partial · ⏳ deferred · ⬜ not started · 🔄 in p
 
 ## 🔄 Active work
 
-**Frontend redesign via Claude (the design tool).** Brief shipped, decisions made, awaiting Claude's file output.
+**Repo on GitHub.** https://github.com/lucyellu/myspot — initial commit pushed. Future commits should be small + focused.
 
-Decisions locked in (see DESIGN-BRIEF.md "Redesign decisions" appendix):
-- **Brand:** lime is primary, pink retired
-- **Layout:** Suno-TikTok vertical-snap feed; AI tools as slide-over sheet
-- **Auto pipeline:** one-tap fire-and-forget with toast progress + inline running chip on the 🚀 button
-- **Search:** full-screen sheet
-- **Drop:** anywhere on the visual card
-- **Family tree:** stays as Sources tab in AI sheet, no separate glyph
-- **Virtualization:** ±2 cards in DOM, off-screen videos paused but pre-warmed
-- **api.js stays verbatim** — backend untouched
+**Cassette/radio frontend is live in-house** as the current production theme (sage HSL + VT323 pixel + halftone visualizer + FM-dial tabs + LCD readouts). Theme system (hue picker + dark mode) layered on top. `frontend/css/app.dark.css.bak` and `frontend/index.dark.html.bak` preserve the original dark theme for rollback.
 
-When Claude returns the new files: back up `frontend/` → `frontend.bak/` → drop in new files → walk the 14-point validation checklist at the bottom of DESIGN-BRIEF.md.
+**Claude design's redesign** (Suno-TikTok feed direction) is still possible — DESIGN-BRIEF.md is the contract. If/when Claude returns files: `mv frontend frontend.bak` → drop in new files → walk 14-point validation checklist. Both designs share the same backend so they're swappable.
+
+**Locked design decisions** (apply to whichever frontend ships):
+- Brand: **lime** primary; pink retired
+- Auto pipeline: one-tap fire-and-forget with toast progress
+- Search: full-screen sheet
+- Drop: anywhere on the visual card
+- Family tree: stays as Sources tab; no separate glyph
+- `frontend/js/api.js` stays verbatim across redesigns
 
 ## Milestones
 
@@ -63,8 +63,8 @@ ffmpeg-driven slideshow export. Distributes completed gens evenly across audio d
 ### ⬜ M5c — Real timeline editor
 Not started. Drag-to-reorder, per-clip duration, transitions, beat detection. Solid via esm.sh. Estimated 4-6 weeks. Probably skipped in favor of more AI features unless export quality demands it.
 
-### 🔄 M5d — Frontend redesign (Suno-TikTok)
-**In progress — Claude design tool.** Output expected: vertical-snap feed, AI sheet, channel sheet, library sheet, search sheet, lime brand, drop-anywhere visual interaction.
+### ✅ M5d — Frontend redesign (cassette/radio aesthetic shipped)
+**In-house version live.** Sage HSL palette + VT323 pixel + halftone Web Audio visualizer + FM-dial sidepanel tabs + LCD readouts. Theme system (hue picker + dark mode) layered on top. Original dark theme preserved at `*.bak`. Claude design's alternate (Suno-TikTok) still welcome — drop-in compatible.
 
 ### ⬜ M6 — Concert mode
 See [CONCERT.md](./CONCERT.md). Phase A (single-user concert mode) is one weekend's work and reuses the existing prompt + image pipeline. The new TikTok-feed redesign actually fits this concept better than the YouTube-style did.
