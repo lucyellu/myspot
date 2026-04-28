@@ -632,32 +632,21 @@ main {
   letter-spacing: 0.04em;
 }
 
-/* ========== Sidepanel — FM dial style ========== */
+/* ========== Sidepanel — FM dial style ==========
+   No sticky, no overflow cap, no internal scrollbars. The panel grows to fit
+   all its content; the user scrolls the whole page if it exceeds viewport. */
 .sidepanel {
-  position: sticky; top: calc(var(--topbar-h) + 16px);
   background: var(--bg);
   border: 3px solid var(--ink);
   border-radius: var(--radius-lg);
   display: flex; flex-direction: column;
-  /* Almost full viewport — minimal buffer to maximize content. */
-  height: calc(100vh - var(--topbar-h) - 24px);
-  overflow: hidden;
   box-shadow: 0 6px 0 var(--ink), 0 10px 20px var(--shadow);
   align-self: start;
 }
 .tab-body {
-  padding: 16px;
-  flex: 1 1 auto; min-height: 0;
-  overflow-y: auto;
-  /* Hide scrollbar by default; show on hover */
-  scrollbar-width: thin;
+  padding: 14px;
+  /* No flex/min-height tricks — let content set the height */
 }
-.tab-body::-webkit-scrollbar { width: 8px; }
-.tab-body::-webkit-scrollbar-thumb {
-  background: var(--ink); border-radius: 4px;
-  opacity: 0; transition: opacity .2s;
-}
-.tab-body:hover::-webkit-scrollbar-thumb { opacity: 1; }
 .tabs.fm-dial {
   background: var(--panel);
   border-bottom: 2px solid var(--ink);
@@ -1096,23 +1085,21 @@ textarea.notes-area {
 }
 
 /* ========== Dark mode ==========
-   Derives text + bg from the user-selected hue:
-     bg   = same hue, very dark
-     text = same hue, very light (the ink IS the accent)
-   No pure white. Selected color carries through both modes. */
+   Much darker. Text is mid-tone hue (not bright), bg is near-black tint.
+   No pure white anywhere. Selected hue carries through. */
 html[data-theme="dark"] {
-  --lig: 12%;                  /* very dark hue-tinted base */
-  --ink:       hsl(var(--hue), calc(var(--sat) + 25%), 82%);  /* light hue-tinted text */
-  --ink-soft:  hsl(var(--hue), calc(var(--sat) + 20%), 70%);
-  --ink-mute:  hsla(var(--hue), calc(var(--sat) + 20%), 75%, 0.55);
-  --border:    hsl(var(--hue), calc(var(--sat) + 20%), 60%);
-  --shadow:    rgba(0,0,0,0.6);
-  /* Tape-deck panels become deeper of the hue (slightly darker than bg) */
-  --panel:     hsl(var(--hue), calc(var(--sat) + 5%), 6%);
-  --panel-2:   hsl(var(--hue), calc(var(--sat) + 5%), 9%);
-  --bg-2:      hsl(var(--hue), var(--sat), calc(var(--lig) + 5%));
-  --bg-elev:   hsl(var(--hue), var(--sat), calc(var(--lig) + 9%));
-  --bg-hover:  hsl(var(--hue), var(--sat), calc(var(--lig) + 14%));
+  --lig: 6%;                   /* near-black hue-tinted base */
+  --ink:       hsl(var(--hue), calc(var(--sat) + 15%), 58%);  /* mid-tone hue text — readable, not bright */
+  --ink-soft:  hsl(var(--hue), calc(var(--sat) + 10%), 48%);
+  --ink-mute:  hsla(var(--hue), calc(var(--sat) + 10%), 48%, 0.6);
+  --border:    hsl(var(--hue), calc(var(--sat) + 15%), 38%);
+  --shadow:    rgba(0,0,0,0.75);
+  /* Panels even darker than bg for proper "tape deck" contrast */
+  --panel:     hsl(var(--hue), calc(var(--sat) + 3%), 3%);
+  --panel-2:   hsl(var(--hue), calc(var(--sat) + 3%), 5%);
+  --bg-2:      hsl(var(--hue), var(--sat), calc(var(--lig) + 3%));
+  --bg-elev:   hsl(var(--hue), var(--sat), calc(var(--lig) + 5%));
+  --bg-hover:  hsl(var(--hue), var(--sat), calc(var(--lig) + 8%));
 }
 
 html[data-theme="dark"] body {
