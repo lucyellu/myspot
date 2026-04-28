@@ -77,6 +77,13 @@ export const api = {
     return req(`/api/songs?${u}`);
   },
   smartTags: () => req("/api/smart-tags"),
+  // Pinterest / arbitrary-page → resolve to actual image URL via og:image.
+  inspireResolve: (url) =>
+    req(`/api/inspire/resolve`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ url }),
+    }),
   topSongs: ({ by = "popular", limit = 20, account = null } = {}) => {
     const u = new URLSearchParams({ by, limit });
     if (account) u.set("account", account);

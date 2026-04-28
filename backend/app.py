@@ -672,6 +672,15 @@ def api_inspire_url(song_id: int, payload: dict = Body(...)):
     return inspire_mod.inspire_from_url(url, song=song, user_seed=seed)
 
 
+@app.post("/api/inspire/resolve")
+def api_inspire_resolve(payload: dict = Body(...)):
+    """Resolve a Pinterest pin / Tumblr / generic-page URL to its image URL
+    without running the vision pipeline. Lets the frontend show a preview
+    before the user commits to the (paid / rate-limited) describe step."""
+    url = (payload or {}).get("url", "")
+    return inspire_mod.resolve_image_url(url)
+
+
 @app.post("/api/songs/{song_id}/inspire/upload")
 async def api_inspire_upload(
     song_id: int,

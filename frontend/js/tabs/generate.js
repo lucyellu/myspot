@@ -289,12 +289,49 @@ export async function renderGenerate(body, song) {
   };
 
   const urlRow = el("div", { class: "row-2 url-row" });
-  const urlInp = el("input", { type: "url", placeholder: "https://...", class: "compact" });
+  const urlInp = el("input", {
+    type: "url",
+    placeholder: "https://pinterest.com/pin/… or any image URL",
+    class: "compact",
+  });
   const urlBtn = el("button", { class: "btn", type: "button" }, "From URL");
   urlRow.append(urlInp, urlBtn);
   urlBtn.onclick = () => runInspireUrl(urlInp.value.trim());
 
-  inspireSection.append(inspireDrop, inspireFileInp, urlRow);
+  // Pinterest preview: resolve URL → image, show thumb, then user can
+  // confirm before running the (paid) vision describe.
+  const pinPreview = el("div", { class: "pin-preview", hidden: true });
+  const pinThumb = el("img", { class: "pin-preview-thumb", alt: "" });
+  const pinHint = el("div", { class: "muted small pin-preview-hint" }, "");
+  const pinConfirm = el("button", { class: "btn primary", type: "button" }, "Use as inspiration");
+  pinPreview.append(pinThumb, pinHint, pinConfirm);
+  inspireSection.append(inspireDrop, inspireFileInp, urlRow, pinPreview);
+
+  let pendingPinUrl = null;
+  const previewBtn = el("button", { class: "btn", type: "button", title: "Preview before describing — works on Pinterest pin pages" }, "Preview");
+  urlRow.append(previewBtn);
+  previewBtn.onclick = async () => {
+    const url = urlInp.value.trim();
+    if (!url) { toast("Paste a URL"); return; }
+    previewBtn.disabled = true; previewBtn.textContent = "Resolving...";
+    try {
+      const r = await api.inspireResolve(url);
+      if (r.error) { toast("Resolve: " + r.error.slice(0, 200)); pinPreview.hidden = true; }
+      else {
+        pendingPinUrl = url;
+        pinThumb.src = r.image_url;
+        pinHint.textContent = `Resolved → ${r.image_url.slice(0, 80)}${r.image_url.length > 80 ? "…" : ""}`;
+        pinPreview.hidden = false;
+      }
+    } catch (e) { toast("Resolve failed: " + e.message); }
+    previewBtn.disabled = false; previewBtn.textContent = "Preview";
+  };
+  pinConfirm.onclick = () => {
+    if (!pendingPinUrl) return;
+    pinPreview.hidden = true;
+    runInspireUrl(pendingPinUrl);
+    pendingPinUrl = null;
+  };
 
   const imgPromptDisplay = el("details", { class: "inspire-detail" });
   const imgPromptSummary = el("summary", {},

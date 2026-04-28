@@ -104,9 +104,15 @@ def inspire_from_url(
     if not url.startswith(("http://", "https://")):
         return {"error": "URL must start with http:// or https://"}
 
+    resolved = resolve_image_url(url)
+    if "error" in resolved:
+        return resolved
+    image_url = resolved["image_url"]
+
     try:
-        with httpx.Client(timeout=20, follow_redirects=True, headers={"User-Agent": "myspot/0.1"}) as c:
-            r = c.get(url)
+        with httpx.Client(timeout=20, follow_redirects=True,
+                           headers={"User-Agent": "Mozilla/5.0 myspot/0.1"}) as c:
+            r = c.get(image_url)
             r.raise_for_status()
             ct = (r.headers.get("content-type") or "").split(";")[0].strip()
             data = r.content
@@ -118,7 +124,84 @@ def inspire_from_url(
     if not (ct.startswith("image/") or _looks_like_image(data)):
         return {"error": f"URL didn't return an image (content-type: {ct or 'unknown'})"}
 
-    return inspire_from_image_bytes(data, song=song, user_seed=user_seed)
+    out = inspire_from_image_bytes(data, song=song, user_seed=user_seed)
+    if isinstance(out, dict) and "prompt" in out:
+        out["source_url"] = image_url
+        out["origin_url"] = url
+    return out
+
+
+# Domains where the URL is an HTML page that *contains* an image rather than
+# being the image itself. We resolve those to the actual image via og:image.
+_HTML_PROVIDERS = (
+    "pinterest.com",
+    "pin.it",
+    "tumblr.com",
+    "instagram.com",
+)
+
+
+def resolve_image_url(url: str) -> dict:
+    """Take a user-pasted URL and return {image_url} or {error}.
+
+    For direct image URLs (jpg/png/etc.) — return as-is.
+    For Pinterest pin pages (and similar HTML providers) — fetch HTML and
+    pull the `og:image` meta tag.
+    """
+    url = (url or "").strip()
+    if not url.startswith(("http://", "https://")):
+        return {"error": "URL must start with http:// or https://"}
+
+    lower = url.lower()
+    is_html_provider = any(d in lower for d in _HTML_PROVIDERS)
+    looks_like_image_url = lower.split("?")[0].split("#")[0].endswith(
+        (".jpg", ".jpeg", ".png", ".webp", ".gif", ".avif")
+    )
+
+    if looks_like_image_url and not is_html_provider:
+        return {"image_url": url}
+
+    try:
+        with httpx.Client(timeout=15, follow_redirects=True,
+                           headers={
+                               # Pinterest blocks generic UAs — pretend to be a browser.
+                               "User-Agent": "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36",
+                               "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,*/*;q=0.8",
+                           }) as c:
+            r = c.get(url)
+            r.raise_for_status()
+            ct = (r.headers.get("content-type") or "").split(";")[0].strip()
+            if ct.startswith("image/"):
+                return {"image_url": url}
+            html = r.text
+    except httpx.HTTPStatusError as e:
+        return {"error": f"Fetch HTTP {e.response.status_code}"}
+    except Exception as e:
+        return {"error": f"Fetch failed: {type(e).__name__}: {e}"}
+
+    # Pull og:image (fallback to twitter:image) from HTML head
+    img = _extract_meta(html, "og:image") or _extract_meta(html, "twitter:image")
+    if not img:
+        return {"error": "No og:image / twitter:image found on this page"}
+    if img.startswith("//"):
+        img = "https:" + img
+    return {"image_url": img}
+
+
+def _extract_meta(html: str, prop: str) -> str | None:
+    """Tiny meta-tag scrape — works for both `property` and `name` attrs and
+    is forgiving about attribute order. Avoids pulling in a full HTML parser."""
+    import re
+    # Try several attribute orderings: property=X content=Y, content=Y property=X, etc.
+    patterns = [
+        rf'<meta[^>]+(?:property|name)=["\']{re.escape(prop)}["\'][^>]+content=["\']([^"\']+)["\']',
+        rf'<meta[^>]+content=["\']([^"\']+)["\'][^>]+(?:property|name)=["\']{re.escape(prop)}["\']',
+    ]
+    for pat in patterns:
+        m = re.search(pat, html, re.IGNORECASE)
+        if m:
+            return m.group(1).strip()
+    return None
 
 
 def _looks_like_image(b: bytes) -> bool:

@@ -1274,6 +1274,28 @@ main {
 .gen-section .row-2 select { min-width: 0; max-width: 100%; }
 .gen-section .url-row { grid-template-columns: 1fr auto; align-items: stretch; }
 .gen-section .url-row .btn { white-space: nowrap; }
+
+/* Pinterest / URL preview — shows the resolved image before committing to
+   the vision-describe API call. */
+.pin-preview {
+  display: flex; flex-direction: column; gap: 8px;
+  margin-top: 10px;
+  padding: 10px;
+  background: var(--bg-2);
+  border: 2px dashed var(--border);
+  border-radius: var(--radius-sm);
+}
+.pin-preview[hidden] { display: none; }
+.pin-preview-thumb {
+  max-width: 100%; max-height: 240px;
+  object-fit: contain;
+  border-radius: var(--radius-sm);
+  background: var(--panel);
+}
+.pin-preview-hint {
+  font-family: var(--font-mono);
+  word-break: break-all;
+}
 .gen-section .button-row { display: flex; gap: 8px; flex-wrap: wrap; margin-top: 8px; }
 
 .gen-hero {
