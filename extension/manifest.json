@@ -1,0 +1,51 @@
+{
+  "manifest_version": 3,
+  "name": "myspot bridge",
+  "version": "0.1.0",
+  "description": "Right-click any image to send it to your local myspot library at localhost:7777",
+  "permissions": [
+    "contextMenus",
+    "storage",
+    "notifications",
+    "activeTab"
+  ],
+  "host_permissions": [
+    "http://127.0.0.1:7777/*",
+    "http://localhost:7777/*",
+    "https://*/*"
+  ],
+  "background": {
+    "service_worker": "background.js"
+  },
+  "action": {
+    "default_popup": "popup.html",
+    "default_icon": {
+      "16": "icons/icon16.png",
+      "48": "icons/icon48.png",
+      "128": "icons/icon128.png"
+    },
+    "default_title": "myspot bridge"
+  },
+  "icons": {
+    "16": "icons/icon16.png",
+    "48": "icons/icon48.png",
+    "128": "icons/icon128.png"
+  },
+  "content_scripts": [
+    {
+      "matches": [
+        "https://suno.com/*",
+        "https://*.suno.com/*",
+        "https://*.meta.ai/*",
+        "https://meta.ai/*",
+        "https://grok.com/*",
+        "https://x.com/*",
+        "https://klingai.com/*",
+        "https://*.klingai.com/*",
+        "https://app.klingai.com/*"
+      ],
+      "js": ["content/shared.js"],
+      "run_at": "document_idle"
+    }
+  ]
+}

@@ -1,0 +1,181 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>myspot</title>
+<link rel="icon" type="image/x-icon" href="/static/icon.ico" />
+<link rel="preconnect" href="https://fonts.googleapis.com" />
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=VT323&family=Pixelify+Sans:wght@400;500;600;700&display=swap" />
+<link rel="stylesheet" href="/static/css/app.css" />
+</head>
+<body>
+<header class="topbar">
+  <button class="ico-btn" id="btn-menu" title="Channels">▤</button>
+  <a class="brand" href="#/">MYSPOT</a>
+  <input id="search" class="search" type="search" placeholder="SEARCH..." />
+  <div class="topbar-spacer"></div>
+  <span class="stats" id="topbar-stats"></span>
+  <button class="ico-btn" id="btn-theme" title="Theme">◐</button>
+  <button class="ico-btn" id="btn-reindex" title="Re-scan library">↻</button>
+</header>
+
+<div id="theme-pop" class="theme-pop" hidden>
+  <label>HUE</label>
+  <input type="range" id="theme-hue" min="0" max="360" step="1" />
+  <div class="theme-preset-row" id="theme-presets"></div>
+  <div class="row">
+    <span>SAT</span>
+    <input type="range" id="theme-sat" min="0" max="100" step="1" />
+    <span class="swatch" id="theme-swatch"></span>
+  </div>
+  <div class="row">
+    <span>LIG</span>
+    <input type="range" id="theme-lig" min="20" max="80" step="1" />
+  </div>
+  <div class="actions">
+    <button class="btn" type="button" id="theme-toggle-mode">DARK MODE</button>
+    <button class="btn" type="button" id="theme-reset">RESET</button>
+  </div>
+</div>
+
+<aside class="sidedrawer" id="sidedrawer">
+  <h3>CHANNELS</h3>
+  <div id="channel-list" class="channel-list"></div>
+  <h3 class="mt">FOLDERS</h3>
+  <div id="asset-folder-list" class="channel-list"></div>
+</aside>
+
+<main id="view"></main>
+
+<template id="tpl-home">
+  <section class="home">
+    <div class="home-header">
+      <h1 id="home-title">RECENT</h1>
+      <div class="sort-group">
+        <label>SORT
+          <select id="home-sort">
+            <option value="recent">RECENT</option>
+            <option value="popular">POPULAR</option>
+            <option value="liked">LIKED</option>
+            <option value="gens">MOST GENS</option>
+            <option value="recent_played">PLAYED</option>
+            <option value="title">TITLE</option>
+            <option value="version">VERSION</option>
+          </select>
+        </label>
+      </div>
+    </div>
+    <div class="grid" id="grid"></div>
+    <div class="grid-footer">
+      <button id="btn-more" class="btn">LOAD MORE</button>
+      <span id="grid-status" class="muted"></span>
+    </div>
+  </section>
+</template>
+
+<template id="tpl-watch">
+  <section class="watch">
+    <div class="watch-main">
+      <div class="player">
+        <div class="visual" id="visual"></div>
+        <canvas id="halftone" class="halftone-overlay"></canvas>
+        <div class="drop-overlay" id="drop-overlay">DROP TO ADD TO TRACK</div>
+        <div class="lcd-strip">
+          <span class="lcd-label">▶</span>
+          <span class="lcd-time" id="lcd-time-cur">00:00</span>
+          <span class="lcd-sep">/</span>
+          <span class="lcd-time" id="lcd-time-tot">00:00</span>
+          <span class="lcd-spacer"></span>
+          <span class="lcd-label" id="lcd-bpm" hidden></span>
+          <span class="lcd-label" id="lcd-version" hidden></span>
+        </div>
+        <audio id="audio" controls preload="metadata"></audio>
+      </div>
+      <div class="track-strip" id="track-strip">
+        <div class="track-empty">DROP IMAGES / VIDEOS / ASSETS HERE TO BUILD YOUR TRACK</div>
+      </div>
+      <details class="media-tray" id="media-tray">
+        <summary class="media-tray-head">
+          <span class="media-tray-title">MEDIA TRAY</span>
+          <select id="media-tray-folder" class="media-tray-folder" onclick="event.stopPropagation()"></select>
+          <span class="media-tray-path muted small" id="media-tray-path"></span>
+        </summary>
+        <div class="media-tray-body">
+          <div class="media-tray-grid" id="media-tray-grid"></div>
+          <div class="media-tray-footer">
+            <button class="btn" id="media-tray-more" type="button">LOAD MORE</button>
+            <span class="muted small" id="media-tray-status"></span>
+          </div>
+        </div>
+      </details>
+      <div class="meta">
+        <h1 id="song-title"></h1>
+        <div class="meta-row">
+          <a class="chip" id="meta-account"></a>
+          <span class="chip ver" id="meta-version" hidden></span>
+          <span class="chip" id="meta-duration"></span>
+          <span class="chip" id="meta-bpm" hidden></span>
+          <span class="chip" id="meta-date" hidden></span>
+          <button class="chip-btn" id="btn-like" type="button" title="Like (1 to toggle)">♡</button>
+        </div>
+        <div class="genre" id="meta-genre"></div>
+      </div>
+      <h2 class="up-next-h">▼ UP NEXT</h2>
+      <div class="up-next" id="up-next"></div>
+    </div>
+    <aside class="sidepanel">
+      <nav class="tabs fm-dial" id="tabs">
+        <div class="fm-tick">
+          <button data-tab="generate" class="active"><span class="fm-freq">88</span><span class="fm-name">GEN</span></button>
+          <button data-tab="lyrics"><span class="fm-freq">92</span><span class="fm-name">LYR</span></button>
+          <button data-tab="sources"><span class="fm-freq">96</span><span class="fm-name">SRC</span></button>
+          <button data-tab="prompts"><span class="fm-freq">100</span><span class="fm-name">PRM</span></button>
+          <button data-tab="queue"><span class="fm-freq">104</span><span class="fm-name">QUE</span></button>
+          <button data-tab="notes"><span class="fm-freq">107</span><span class="fm-name">NOT</span></button>
+        </div>
+      </nav>
+      <div class="tab-body" id="tab-body"></div>
+    </aside>
+  </section>
+</template>
+
+<template id="tpl-card">
+  <article class="card">
+    <a class="thumb">
+      <img loading="lazy" alt="" />
+      <span class="card-version"></span>
+      <span class="card-duration"></span>
+      <span class="card-liked" hidden>♥</span>
+    </a>
+    <div class="card-body">
+      <a class="card-title"></a>
+      <div class="card-sub"></div>
+    </div>
+  </article>
+</template>
+
+<div id="toast" class="toast" hidden></div>
+
+<div id="help-overlay" class="help-overlay" hidden>
+  <div class="help-card">
+    <h3>SHORTCUTS</h3>
+    <table>
+      <tr><td><kbd>SPC</kbd> / <kbd>K</kbd></td><td>play / pause</td></tr>
+      <tr><td><kbd>J</kbd> / <kbd>L</kbd></td><td>seek -10s / +10s</td></tr>
+      <tr><td><kbd>M</kbd></td><td>mute</td></tr>
+      <tr><td><kbd>N</kbd></td><td>next</td></tr>
+      <tr><td><kbd>P</kbd></td><td>previous</td></tr>
+      <tr><td><kbd>1</kbd>-<kbd>6</kbd></td><td>switch tab</td></tr>
+      <tr><td><kbd>/</kbd></td><td>focus search</td></tr>
+      <tr><td><kbd>?</kbd></td><td>this help</td></tr>
+      <tr><td><kbd>ESC</kbd></td><td>close</td></tr>
+    </table>
+    <button class="btn" id="help-close">CLOSE</button>
+  </div>
+</div>
+
+<script type="module" src="/static/js/main.js"></script>
+</body>
+</html>

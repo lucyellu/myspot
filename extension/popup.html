@@ -1,0 +1,42 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<title>myspot bridge</title>
+<style>
+  body { width: 320px; margin: 0; padding: 14px;
+    background: #0a0a0c; color: #e8e8ec;
+    font: 13px/1.4 -apple-system, "Segoe UI", system-ui, sans-serif; }
+  h1 { font-size: 14px; margin: 0 0 8px; color: #c8e85f; }
+  .status { padding: 8px 10px; border-radius: 6px;
+    background: #15151a; border: 1px solid #2a2a33;
+    margin-bottom: 10px; font-size: 12px; }
+  .status.ok { border-color: #c8e85f; }
+  .status.bad { border-color: #ff4466; color: #ffaaaa; }
+  .row { display: flex; gap: 6px; align-items: center; margin: 6px 0; font-size: 11px; color: #9b9ba5; }
+  kbd { background: #15151a; border: 1px solid #2a2a33; border-bottom-width: 2px;
+    padding: 1px 6px; border-radius: 3px; font-family: ui-monospace, monospace; font-size: 10px; }
+  a { color: #c8e85f; }
+  hr { border: 0; border-top: 1px solid #2a2a33; margin: 10px 0; }
+  .small { font-size: 11px; color: #9b9ba5; }
+  button { font: inherit; padding: 6px 10px; cursor: pointer;
+    background: #15151a; color: #e8e8ec; border: 1px solid #2a2a33; border-radius: 4px; }
+  button:hover { background: #1f1f26; }
+</style>
+</head>
+<body>
+<h1>myspot bridge</h1>
+<div id="status" class="status">Checking myspot...</div>
+<div id="current-song" class="small"></div>
+<hr />
+<div class="row"><strong>How to use</strong></div>
+<div class="small">Right-click any image on any website → <em>Send to myspot</em>. The image downloads to your local <code>data/gens/</code> and (optionally) attaches to the song you have open.</div>
+<hr />
+<div class="row">
+  <button id="open-myspot">Open myspot</button>
+  <button id="ping">Re-check</button>
+</div>
+<div class="small" style="margin-top:10px">Active on: suno.com, meta.ai, grok.com / x.com, klingai.com.</div>
+<script src="popup.js"></script>
+</body>
+</html>

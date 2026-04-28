@@ -1,0 +1,35 @@
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+.env
+.env.local
+secrets/
+!secrets/.gitignore
+data/myspot.db
+data/myspot.db-journal
+data/myspot.db-wal
+data/myspot.db-shm
+data/gens/*
+!data/gens/.gitkeep
+data/exports/*
+!data/exports/.gitkeep
+.venv/
+venv/
+.vscode/
+.idea/
+*.log
+*.bak
+*.old.ico.bak
+*.dark.css.bak
+*.dark.html.bak
+frontend.bak/
+icon_preview.png
+node_modules/
+.DS_Store
+Thumbs.db
+
+# Personal media drop folder — kept local, never pushed.
+# Each user populates this themselves. Repo keeps a .gitkeep so the dir exists.
+assets/*
+!assets/.gitkeep
