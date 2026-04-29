@@ -11,6 +11,7 @@ import threading
 from pathlib import Path  # noqa
 
 from fastapi import FastAPI, HTTPException, Query, Request, Body, UploadFile, File
+from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import FileResponse, JSONResponse, StreamingResponse
 from fastapi.staticfiles import StaticFiles
 
@@ -36,6 +37,29 @@ from .render import render_slideshow, have_ffmpeg
 app = FastAPI(title="myspot", version="0.1.0")
 _db_lock = threading.Lock()
 _conn = init_db()
+
+# Allow the static frontend (deployed e.g. on Netlify) to call this backend
+# when it's exposed via Cloudflare Tunnel / Fly.io / etc. Same-origin local
+# dev still works because BASE = "" in the frontend.
+#
+# allow_origin_regex covers the moving-target tunnel hostnames; allow_origins
+# pins specific Netlify subdomains. Adjust both for your own deployments.
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=[
+        "https://myspot-web.netlify.app",
+    ],
+    allow_origin_regex=(
+        r"^https://("
+        r"[a-z0-9-]+\.trycloudflare\.com|"     # Cloudflare Quick Tunnels
+        r"deploy-preview-\d+--myspot-web\.netlify\.app|"  # Netlify deploy previews
+        r"[a-z0-9-]+--myspot-web\.netlify\.app"           # Netlify branch deploys
+        r")$"
+    ),
+    allow_credentials=False,
+    allow_methods=["*"],
+    allow_headers=["*"],
+)
 
 
 def _row(r):
