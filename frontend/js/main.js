@@ -79,15 +79,7 @@ async function loadSmartTags() {
       const a = document.createElement("a");
       a.href = `#/tag/${encodeURIComponent(t.tag)}`;
       a.dataset.tag = t.tag;
-      const emoji =
-        t.tag === "live" ? "🎤" :
-        t.tag === "acoustic" ? "🎸" :
-        t.tag === "remix" ? "🎛️" :
-        t.tag === "instrumental" ? "🎼" :
-        t.tag === "demo" ? "🪞" :
-        t.tag === "cover" ? "🔁" :
-        t.tag === "remastered" ? "✨" : "🏷️";
-      a.innerHTML = `<span class="count">${t.n.toLocaleString()}</span>${emoji} ${t.tag.toUpperCase()}`;
+      a.innerHTML = `<span class="count">${t.n.toLocaleString()}</span>${t.tag.toUpperCase()}`;
       list.append(a);
     }
   } catch { /* ignore */ }

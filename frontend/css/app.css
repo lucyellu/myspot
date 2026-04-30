@@ -938,40 +938,49 @@ main {
 }
 
 /* ========== Media tray ========== */
-.media-tray {
-  margin-top: 10px;
+.shelves {
+  display: grid; grid-template-columns: 1fr 1fr; gap: 14px;
+  margin-top: 14px;
+}
+.shelf {
   background: var(--bg-elev);
   border: 2px solid var(--ink);
   border-radius: var(--radius);
   overflow: hidden;
+  display: flex; flex-direction: column;
+  max-height: 360px;
 }
-.media-tray-head {
-  display: flex; align-items: center; gap: 12px;
-  padding: 10px 14px;
-  cursor: pointer;
-  list-style: none; user-select: none;
-  font-family: var(--font-display); font-size: 13px; letter-spacing: 0.18em;
+.shelf-head {
+  display: flex; align-items: center; gap: 10px;
+  padding: 8px 12px;
+  background: var(--panel);
+  border-bottom: 2px solid var(--ink);
+  flex-shrink: 0;
 }
-.media-tray-head::-webkit-details-marker { display: none; }
-.media-tray-head:hover { background: var(--bg-hover); }
-.media-tray-head::before { content: "▸"; color: var(--ink); transition: transform .15s; }
-.media-tray[open] .media-tray-head::before { content: "▾"; }
-.media-tray-title { flex: 0 0 auto; }
+.shelf-title {
+  font-family: var(--font-display); font-size: 11px; letter-spacing: 0.2em;
+  flex-shrink: 0;
+}
+.shelf-songs .up-next {
+  flex: 1; overflow-y: auto;
+  padding: 10px;
+  gap: 8px;
+}
 .media-tray-folder {
   background: var(--panel); color: var(--accent);
   border: 2px solid var(--ink); border-radius: var(--radius-sm);
-  padding: 4px 10px;
-  font-family: var(--font-mono); font-size: 13px; letter-spacing: 0.06em;
+  padding: 3px 8px;
+  font-family: var(--font-mono); font-size: 12px; letter-spacing: 0.06em;
 }
 .media-tray-path {
   flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
-  font-family: var(--font-mono); font-size: 12px;
+  font-family: var(--font-mono); font-size: 11px;
   color: var(--ink-mute);
 }
 .media-tray-body {
-  border-top: 2px solid var(--ink);
-  padding: 14px;
-  max-height: 360px; overflow-y: auto;
+  border-top: 0;
+  padding: 10px;
+  flex: 1; overflow-y: auto;
   background: var(--bg);
 }
 .media-tray-grid {

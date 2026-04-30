@@ -167,6 +167,24 @@ export async function renderWatch(songId) {
   });
 }
 
+function stageUrl(src, kind) {
+  const visual = document.getElementById("visual");
+  if (!visual) return;
+  visual.innerHTML = "";
+  visual.classList.remove("with-art", "full-art");
+  visual.classList.add("with-art", "full-art");
+  const bg = el("div", { class: "blur-bg" });
+  if (kind !== "video") bg.style.backgroundImage = `url(${src})`;
+  visual.append(bg);
+  const wrap = el("div", { class: "center-art" });
+  if (kind === "video") {
+    wrap.append(el("video", { src, autoplay: true, muted: true, loop: true, playsinline: true }));
+  } else {
+    wrap.append(el("img", { src, alt: "" }));
+  }
+  visual.append(wrap);
+}
+
 function showClip(gen) {
   const visual = document.getElementById("visual");
   if (!visual || !gen) return;
@@ -489,9 +507,6 @@ export async function setTrayFolder(folder) {
     select.append(el("option", { value: folder }, folder));
   }
   select.value = folder;
-  // Open the tray if it's collapsed
-  const tray = document.getElementById("media-tray");
-  if (tray) tray.open = true;
   await loadTray(folder);
 }
 
@@ -588,7 +603,9 @@ function trayTile(item) {
     tile.append(el("img", { src: item.src, loading: "lazy", alt: "" }));
   }
   tile.append(el("span", { class: "tray-tile-tag" }, item.tag || ""));
-  tile.append(el("span", { class: "tray-tile-attach" }, "+ track"));
+  const attachBtn = el("button", { class: "tray-tile-attach", type: "button", title: "Add to track" }, "+ track");
+  attachBtn.onclick = (e) => { e.stopPropagation(); item.attach(); };
+  tile.append(attachBtn);
 
   // Multi-select checkbox (top-left). Stops click bubbling so the tile click still
   // does single-attach when used directly.
@@ -608,7 +625,7 @@ function trayTile(item) {
       cb.onchange();
       return;
     }
-    item.attach();
+    stageUrl(item.src, item.kind);
   };
 
   // Drag payload: serialize so the prompt-tab inspire-drop can fetch the asset.

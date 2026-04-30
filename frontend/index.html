@@ -145,25 +145,31 @@
       <div class="track-strip" id="track-strip">
         <div class="track-empty">DROP IMAGES / VIDEOS / ASSETS HERE TO BUILD YOUR TRACK</div>
       </div>
-      <details class="media-tray" id="media-tray">
-        <summary class="media-tray-head">
-          <span class="media-tray-title">MEDIA TRAY</span>
-          <select id="media-tray-folder" class="media-tray-folder" onclick="event.stopPropagation()"></select>
-          <span class="media-tray-path muted small" id="media-tray-path"></span>
-        </summary>
-        <div class="media-tray-body">
-          <div id="tray-bulk-bar" class="tray-bulk-bar" hidden>
-            <span class="tray-bulk-count"></span>
-            <button class="btn" type="button" id="tray-bulk-attach">Attach selected to song</button>
-            <button class="btn" type="button" id="tray-bulk-clear">Clear</button>
+      <div class="shelves">
+        <div class="shelf" id="media-tray">
+          <div class="shelf-head">
+            <span class="shelf-title">MEDIA</span>
+            <select id="media-tray-folder" class="media-tray-folder"></select>
+            <span class="media-tray-path muted small" id="media-tray-path"></span>
           </div>
-          <div class="media-tray-grid" id="media-tray-grid"></div>
-          <div class="media-tray-footer">
-            <button class="btn" id="media-tray-more" type="button">LOAD MORE</button>
-            <span class="muted small" id="media-tray-status"></span>
+          <div class="media-tray-body">
+            <div id="tray-bulk-bar" class="tray-bulk-bar" hidden>
+              <span class="tray-bulk-count"></span>
+              <button class="btn" type="button" id="tray-bulk-attach">Attach selected to song</button>
+              <button class="btn" type="button" id="tray-bulk-clear">Clear</button>
+            </div>
+            <div class="media-tray-grid" id="media-tray-grid"></div>
+            <div class="media-tray-footer">
+              <button class="btn" id="media-tray-more" type="button">LOAD MORE</button>
+              <span class="muted small" id="media-tray-status"></span>
+            </div>
           </div>
         </div>
-      </details>
+        <div class="shelf shelf-songs">
+          <div class="shelf-head"><span class="shelf-title">UP NEXT</span></div>
+          <div class="up-next" id="up-next"></div>
+        </div>
+      </div>
       <div class="meta">
         <h1 id="song-title"></h1>
         <div class="meta-row">
@@ -176,8 +182,6 @@
         </div>
         <div class="genre" id="meta-genre"></div>
       </div>
-      <h2 class="up-next-h">▼ UP NEXT</h2>
-      <div class="up-next" id="up-next"></div>
     </div>
     <aside class="sidepanel">
       <nav class="tabs fm-dial" id="tabs">

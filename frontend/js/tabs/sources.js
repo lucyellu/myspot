@@ -13,22 +13,24 @@ export function renderSources(body, song) {
     return;
   }
 
+  const seen = new Set([song.id]);
+
   if (hasSources) {
     const grp = el("div", { class: "derivative-group" });
     grp.append(el("h4", {}, "Source / parent"));
-    for (const s of song.sources) grp.append(derivRow(s, 0));
+    for (const s of song.sources) grp.append(derivRow(s, 0, seen));
     body.append(grp);
   }
 
   if (hasDerivs) {
     const grp = el("div", { class: "derivative-group" });
     grp.append(el("h4", {}, `Derivatives (${song.derivatives.length})`));
-    for (const d of song.derivatives) grp.append(derivRow(d, 0));
+    for (const d of song.derivatives) grp.append(derivRow(d, 0, seen));
     body.append(grp);
   }
 }
 
-function derivRow(s, depth) {
+function derivRow(s, depth, seen) {
   const wrap = el("div", { class: "deriv-wrap" });
   wrap.style.marginLeft = depth * 16 + "px";
 
@@ -42,10 +44,17 @@ function derivRow(s, depth) {
   if (s.kind) info.append(el("div", { class: "kind" }, s.kind));
   row.append(info);
 
-  const toggle = el("button", { class: "deriv-toggle", type: "button" }, "▶");
   const nav = el("a", { class: "deriv-nav", href: `#/song/${s.id}`, title: "Open song" }, "↗");
-  row.append(toggle);
   row.append(nav);
+
+  if (seen.has(s.id)) {
+    row.append(el("span", { class: "deriv-sublabel", style: "font-size:10px;opacity:0.5" }, "already shown"));
+    wrap.append(row);
+    return wrap;
+  }
+
+  const toggle = el("button", { class: "deriv-toggle", type: "button" }, "▶");
+  row.insertBefore(toggle, nav);
   wrap.append(row);
 
   const children = el("div", { class: "deriv-children" });
@@ -68,13 +77,14 @@ function derivRow(s, depth) {
         if (!hasSrc && !hasDrv) {
           children.append(el("div", { class: "deriv-sublabel" }, "No further versions."));
         } else {
+          const childSeen = new Set([...seen, s.id]);
           if (hasSrc) {
             children.append(el("div", { class: "deriv-sublabel" }, "SOURCES"));
-            for (const src of data.sources) children.append(derivRow(src, depth + 1));
+            for (const src of data.sources) children.append(derivRow(src, depth + 1, childSeen));
           }
           if (hasDrv) {
             children.append(el("div", { class: "deriv-sublabel" }, "DERIVATIVES"));
-            for (const drv of data.derivatives) children.append(derivRow(drv, depth + 1));
+            for (const drv of data.derivatives) children.append(derivRow(drv, depth + 1, childSeen));
           }
         }
       } catch {
