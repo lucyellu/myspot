@@ -35,7 +35,7 @@ export async function renderAssets({ folder = null } = {}) {
       const data = await api.gensBrowse({ limit: PAGE, offset });
       total = data.total;
       items = data.items.map((g) => ({
-        kind: g.kind, src: `/media/gen/${g.id}`,
+        kind: g.kind, src: mediaUrl.gen(g.id),
         title: g.song_title, sub: `${g.tool} • #${g.song_id}`,
         href: `#/song/${g.song_id}`,
       }));
@@ -43,7 +43,7 @@ export async function renderAssets({ folder = null } = {}) {
       const data = await api.assets({ folder, limit: PAGE, offset });
       total = data.total;
       items = data.items.map((a) => ({
-        kind: a.kind, src: `/media/asset/${a.id}`,
+        kind: a.kind, src: mediaUrl.asset(a.id),
         title: a.file_path.split("/").pop(),
         sub: [a.folder, a.width && a.height ? `${a.width}×${a.height}` : ""].filter(Boolean).join(" · "),
         attach: a,

@@ -213,9 +213,9 @@ export const api = {
 };
 
 export const mediaUrl = {
-  audio: (id) => `/media/audio/${id}`,
-  cover: (id) => `/media/cover/${id}`,
-  asset: (id) => `/media/asset/${id}`,
-  gen: (id) => `/media/gen/${id}`,
-  export: (id) => `/media/export/${id}`,
+  audio: (id) => `${BASE}/media/audio/${id}`,
+  cover: (id) => `${BASE}/media/cover/${id}`,
+  asset: (id) => `${BASE}/media/asset/${id}`,
+  gen: (id) => `${BASE}/media/gen/${id}`,
+  export: (id) => `${BASE}/media/export/${id}`,
 };

@@ -1668,3 +1668,29 @@ html[data-theme="dark"] {
   flex: 1; height: 28px; border: 2px solid var(--ink); border-radius: 999px;
   cursor: pointer;
 }
+.api-pop {
+  position: fixed; top: calc(var(--topbar-h) + 8px); right: 12px;
+  background: var(--bg-2); color: var(--ink);
+  border: 2px solid var(--ink); border-radius: var(--radius);
+  padding: 14px;
+  box-shadow: 0 6px 0 var(--ink), 0 10px 24px var(--shadow);
+  z-index: 60;
+  min-width: 320px;
+  font-family: var(--font-mono); font-size: 13px;
+  letter-spacing: 0.04em;
+}
+.api-pop[hidden] { display: none; }
+.api-pop-label {
+  display: block; margin-bottom: 8px;
+  font-family: var(--font-display); font-size: 11px; letter-spacing: 0.16em;
+}
+.api-url-input {
+  width: 100%; padding: 6px 8px; box-sizing: border-box;
+  border: 2px solid var(--ink); border-radius: var(--radius-sm);
+  background: var(--panel); color: var(--ink);
+  font-family: var(--font-mono); font-size: 12px;
+  margin-bottom: 6px;
+}
+.api-pop .muted { font-size: 11px; opacity: 0.7; margin-bottom: 2px; }
+.api-pop .actions { display: flex; gap: 6px; margin-top: 10px; }
+.api-pop .actions button { flex: 1; }

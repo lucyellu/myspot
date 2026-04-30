@@ -185,11 +185,42 @@ function bindGlobal() {
   });
 }
 
+function bindApiPopover() {
+  const btn = document.getElementById("btn-api");
+  const pop = document.getElementById("api-pop");
+  const input = document.getElementById("api-url-input");
+  const current = document.getElementById("api-current");
+
+  btn.onclick = () => {
+    const stored = localStorage.getItem("myspot_api_base") || "";
+    input.value = stored;
+    current.textContent = stored ? `Active: ${stored}` : "Local mode (same-origin)";
+    pop.hidden = !pop.hidden;
+  };
+
+  document.getElementById("api-save").onclick = () => {
+    const v = input.value.trim().replace(/\/$/, "");
+    if (v) localStorage.setItem("myspot_api_base", v);
+    else localStorage.removeItem("myspot_api_base");
+    location.reload();
+  };
+
+  document.getElementById("api-clear").onclick = () => {
+    localStorage.removeItem("myspot_api_base");
+    location.reload();
+  };
+
+  document.addEventListener("click", (e) => {
+    if (!pop.hidden && !pop.contains(e.target) && e.target !== btn) pop.hidden = true;
+  });
+}
+
 window.addEventListener("hashchange", route);
 window.addEventListener("DOMContentLoaded", async () => {
   bindGlobal();
   bindHelp();
   bindThemePopover();
+  bindApiPopover();
   await Promise.all([loadChannels(), loadAssetFolders(), loadSmartTags(), loadStats()]);
   await route();
 });

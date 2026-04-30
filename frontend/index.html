@@ -12,6 +12,12 @@
 <!-- Runtime config: sets window.MYSPOT_API_BASE for static deploys. Optional;
      missing file is fine (same-origin fallback). -->
 <script src="/static/config.js" onerror="this.remove()"></script>
+<script>
+  (function () {
+    var s = localStorage.getItem("myspot_api_base");
+    if (s) window.MYSPOT_API_BASE = s;
+  })();
+</script>
 </head>
 <body>
 <header class="topbar">
@@ -22,7 +28,18 @@
   <span class="stats" id="topbar-stats"></span>
   <button class="ico-btn" id="btn-theme" title="Theme">◐</button>
   <button class="ico-btn" id="btn-reindex" title="Re-scan library">↻</button>
+  <button class="ico-btn" id="btn-api" title="Backend URL">⚙</button>
 </header>
+
+<div id="api-pop" class="api-pop" hidden>
+  <label class="api-pop-label">BACKEND URL</label>
+  <input type="url" id="api-url-input" class="api-url-input" placeholder="https://xxxx.trycloudflare.com" />
+  <div class="muted small" id="api-current"></div>
+  <div class="actions">
+    <button class="btn" type="button" id="api-save">SAVE &amp; RELOAD</button>
+    <button class="btn" type="button" id="api-clear">CLEAR</button>
+  </div>
+</div>
 
 <div id="theme-pop" class="theme-pop" hidden>
   <label>HUE</label>
