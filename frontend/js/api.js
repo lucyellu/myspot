@@ -210,6 +210,7 @@ export const api = {
   },
   reindex: () => req("/api/reindex", { method: "POST" }),
   reindexStatus: () => req("/api/reindex/status"),
+  fingerprintAll: () => req("/api/fingerprint-all", { method: "POST" }),
 };
 
 export const mediaUrl = {

@@ -295,10 +295,31 @@ def get_song(song_id: int):
 @app.get("/api/songs/{song_id}/related")
 def related_songs(song_id: int, limit: int = Query(20, ge=1, le=100)):
     s = _conn.execute(
-        "SELECT account, base_title, version FROM songs WHERE id=?", (song_id,)
+        "SELECT account, base_title, version, mfcc FROM songs WHERE id=?", (song_id,)
     ).fetchone()
     if s is None:
         raise HTTPException(404, "song not found")
+
+    if s["mfcc"]:
+        from .fingerprint import cosine_sim
+        src_vec = json.loads(s["mfcc"])
+        rows = _conn.execute(
+            "SELECT id, title, version, account, jpg_path, duration, mfcc FROM songs WHERE id != ? AND mfcc IS NOT NULL",
+            (song_id,)
+        ).fetchall()
+        scored = []
+        for row in rows:
+            try:
+                vec = json.loads(row["mfcc"])
+                sim = cosine_sim(src_vec, vec)
+            except Exception:
+                continue
+            d = {k: row[k] for k in ("id", "title", "version", "account", "jpg_path", "duration")}
+            d["reason"] = "audio"
+            d["similarity"] = round(sim, 3)
+            scored.append(d)
+        scored.sort(key=lambda x: -x["similarity"])
+        return scored[:limit]
 
     siblings = _conn.execute(
         """SELECT id, title, version, account, jpg_path, duration, 'sibling' AS reason
@@ -316,6 +337,28 @@ def related_songs(song_id: int, limit: int = Query(20, ge=1, le=100)):
 
     items = _rows(siblings) + _rows(same_account)
     return items[:limit]
+
+
+@app.post("/api/fingerprint-all")
+def fingerprint_all_songs():
+    from .fingerprint import extract_mfcc
+    from .db import connect as _connect
+    def _run():
+        conn2 = _connect()
+        try:
+            rows = conn2.execute("SELECT id, mp3_path FROM songs WHERE mfcc IS NULL").fetchall()
+            for row in rows:
+                vec = extract_mfcc(row["mp3_path"])
+                if vec:
+                    conn2.execute(
+                        "UPDATE songs SET mfcc=? WHERE id=?",
+                        (json.dumps(vec), row["id"])
+                    )
+        finally:
+            conn2.close()
+    threading.Thread(target=_run, daemon=True).start()
+    count = _conn.execute("SELECT COUNT(*) as n FROM songs WHERE mfcc IS NULL").fetchone()
+    return {"status": "started", "pending": count["n"] if count else 0}
 
 
 # ----------------------------- Sortability + plays + likes ----------

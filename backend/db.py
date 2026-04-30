@@ -3,7 +3,7 @@ from pathlib import Path
 from contextlib import contextmanager
 from .config import DB_PATH
 
-SCHEMA_VERSION = 1
+SCHEMA_VERSION = 2
 
 SCHEMA = """
 CREATE TABLE IF NOT EXISTS meta (
@@ -29,6 +29,7 @@ CREATE TABLE IF NOT EXISTS songs (
     wav_path TEXT,
     mid_path TEXT,
     suno_date TEXT,
+    mfcc TEXT,
     liked INTEGER NOT NULL DEFAULT 0,
     indexed_at TEXT NOT NULL DEFAULT (datetime('now'))
 );
@@ -211,6 +212,17 @@ def init_db() -> sqlite3.Connection:
             "INSERT INTO meta(key, value) VALUES('schema_version', ?)",
             (str(SCHEMA_VERSION),),
         )
+    else:
+        stored = int(row["value"])
+        if stored < 2:
+            try:
+                conn.execute("ALTER TABLE songs ADD COLUMN mfcc TEXT")
+            except Exception:
+                pass
+            conn.execute(
+                "UPDATE meta SET value=? WHERE key='schema_version'",
+                (str(SCHEMA_VERSION),),
+            )
     return conn
 
 

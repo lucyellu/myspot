@@ -1209,7 +1209,7 @@ main {
   color: var(--ink-mute); margin: 12px 0 6px;
 }
 .derivative-row {
-  display: grid; grid-template-columns: 56px 1fr auto; gap: 10px;
+  display: grid; grid-template-columns: 56px 1fr auto auto; gap: 10px;
   align-items: center;
   padding: 6px;
   border: 2px solid transparent;
@@ -1694,3 +1694,22 @@ html[data-theme="dark"] {
 .api-pop .muted { font-size: 11px; opacity: 0.7; margin-bottom: 2px; }
 .api-pop .actions { display: flex; gap: 6px; margin-top: 10px; }
 .api-pop .actions button { flex: 1; }
+
+.deriv-wrap { margin-bottom: 6px; }
+.deriv-info { flex: 1; min-width: 0; }
+.deriv-toggle {
+  background: none; border: 1px solid var(--ink-mute); border-radius: 4px;
+  color: var(--ink); font-size: 10px; cursor: pointer; padding: 2px 6px;
+  align-self: center; line-height: 1; flex-shrink: 0;
+}
+.deriv-toggle:hover { background: var(--bg-2); }
+.deriv-nav {
+  font-size: 14px; color: var(--ink-mute); text-decoration: none;
+  padding: 2px 4px; border-radius: 4px; align-self: center; flex-shrink: 0;
+}
+.deriv-nav:hover { color: var(--ink); }
+.deriv-children { border-left: 2px solid var(--bg-2); margin-left: 28px; padding-left: 10px; padding-top: 4px; }
+.deriv-sublabel {
+  font-family: var(--font-display); font-size: 10px; letter-spacing: 0.18em;
+  color: var(--ink-mute); margin: 8px 0 4px;
+}

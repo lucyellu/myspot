@@ -166,11 +166,19 @@ function bindGlobal() {
         const s = await api.reindexStatus();
         if (!s.running) {
           clearInterval(interval);
-          toast("Re-index complete");
+          toast("Re-index complete — computing audio fingerprints...");
+          api.fingerprintAll().catch(() => {});
           loadStats(); loadChannels(); loadAssetFolders();
         }
       }, 2000);
     } catch (e) { toast("Reindex failed: " + e.message); }
+  };
+
+  document.getElementById("btn-fingerprint").onclick = async () => {
+    try {
+      const r = await api.fingerprintAll();
+      toast(`Fingerprinting ${r.pending} songs in background…`);
+    } catch (e) { toast("Fingerprint failed: " + e.message); }
   };
 
   const search = document.getElementById("search");
