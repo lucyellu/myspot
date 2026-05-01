@@ -64,7 +64,7 @@ function assetCard(item) {
   const thumb = el("a", {
     class: "thumb",
     href: item.href || "#",
-    onclick: item.href ? null : (e) => { e.preventDefault(); openAttachPicker(item.attach); },
+    onclick: item.href ? null : (e) => { e.preventDefault(); openPreview(item); },
   });
   if (item.kind === "image") thumb.append(el("img", { loading: "lazy", src: item.src, alt: "" }));
   else thumb.append(el("video", { src: item.src, muted: true, loop: true, playsinline: true, style: "width:100%;height:100%;object-fit:cover;" }));
@@ -78,8 +78,43 @@ function assetCard(item) {
   return article;
 }
 
-async function openAttachPicker(asset) {
-  const q = prompt("Attach this asset to which song? (search by title or paste song ID)", "");
+function openPreview(item) {
+  const overlay = el("div", { class: "preview-overlay" });
+  const box = el("div", { class: "preview-box" });
+
+  if (item.kind === "video") {
+    box.append(el("video", { src: item.src, controls: true, autoplay: true, loop: true, playsinline: true }));
+  } else {
+    box.append(el("img", { src: item.src, alt: "" }));
+  }
+
+  const footer = el("div", { class: "preview-footer" });
+
+  if (item.attach) {
+    const attachBtn = el("button", { class: "btn", type: "button" }, "Attach to song…");
+    attachBtn.onclick = () => attachToSong(item.attach, overlay);
+    footer.append(attachBtn);
+  }
+
+  const closeBtn = el("button", { class: "btn", type: "button" }, "Close");
+  closeBtn.onclick = () => overlay.remove();
+  footer.append(closeBtn);
+
+  box.append(footer);
+  overlay.append(box);
+  overlay.onclick = (e) => { if (e.target === overlay) overlay.remove(); };
+
+  function onKey(e) {
+    if (e.key === "Escape") { overlay.remove(); document.removeEventListener("keydown", onKey); }
+  }
+  document.addEventListener("keydown", onKey);
+  overlay.addEventListener("remove", () => document.removeEventListener("keydown", onKey));
+
+  document.body.append(overlay);
+}
+
+async function attachToSong(asset, overlay) {
+  const q = prompt("Song title or ID to attach to:", "");
   if (!q) return;
   let songId = parseInt(q, 10);
   if (Number.isNaN(songId)) {
@@ -92,6 +127,7 @@ async function openAttachPicker(asset) {
   try {
     await api.attachAsset(songId, asset.id);
     toast("Attached → opening song");
+    overlay.remove();
     location.hash = `#/song/${songId}`;
   } catch (e) { toast("Attach failed: " + e.message); }
 }
