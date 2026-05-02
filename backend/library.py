@@ -96,11 +96,19 @@ def index_suno_library(conn, cache: SunoSyncCache, meta_db: SunoMetaDB | None = 
                 # back to matching by the local_mp3 path stored in suno_meta.db.
                 meta_entry = (meta_db.lookup(suno_id) if meta_db and suno_id else None)
                 if meta_entry is None and meta_db:
+                    # Fallback 1: match by local_mp3 path (suno_nightly downloads)
                     path_meta = meta_db.lookup_by_path(str(mp3_file))
                     if path_meta:
                         meta_entry = path_meta
                         if not suno_id:
                             suno_id = path_meta.get("id")
+                if meta_entry is None and meta_db:
+                    # Fallback 2: extract 8-char UUID prefix from __xxxxxxxx filename suffix
+                    prefix_meta = meta_db.lookup_by_filename_prefix(stem)
+                    if prefix_meta:
+                        meta_entry = prefix_meta
+                        if not suno_id:
+                            suno_id = prefix_meta.get("id")
                 meta_entry = meta_entry or {}
                 suno_play_count   = meta_entry.get("play_count")
                 suno_upvote_count = meta_entry.get("upvote_count")
