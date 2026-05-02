@@ -1,10 +1,11 @@
 @echo off
 title myspot
 cd /d "%~dp0"
+git checkout dev >nul 2>&1
 
 echo.
 echo  =========================================
-echo   myspot - http://127.0.0.1:7777
+echo   myspot (dev) - http://127.0.0.1:7777
 echo  =========================================
 echo.
 echo  Launching browser in 3 seconds...

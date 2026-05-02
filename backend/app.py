@@ -120,6 +120,7 @@ def list_songs(
     limit: int = Query(60, ge=1, le=500),
     offset: int = Query(0, ge=0),
     sort: str = Query("recent", regex="^(recent|title|version|popular|liked|gens|recent_played)$"),
+    dir: str = Query("desc", regex="^(asc|desc)$"),
 ):
     where = []
     args: list = []
@@ -140,14 +141,15 @@ def list_songs(
             where.append(clause)
             args.extend(params)
 
+    D, A = ("DESC", "ASC") if dir == "desc" else ("ASC", "DESC")
     order = {
-        "recent": "s.id DESC",
-        "title": "s.base_title ASC, s.version ASC",
-        "version": "s.version DESC, s.id DESC",
-        "popular": "play_count DESC, s.id DESC",
-        "liked": "s.liked DESC, s.id DESC",
-        "gens": "gens_count DESC, s.id DESC",
-        "recent_played": "last_played_at DESC NULLS LAST, s.id DESC",
+        "recent":       f"s.id {D}",
+        "title":        f"s.base_title {D}, s.version {D}",
+        "version":      f"s.version {D}, s.id {D}",
+        "popular":      f"s.suno_play_count {D} NULLS LAST, s.id {D}",
+        "liked":        f"s.liked {D}, s.id {D}",
+        "gens":         f"gens_count {D}, s.id {D}",
+        "recent_played": f"last_played_at {D} NULLS LAST, s.id {D}",
     }[sort]
 
     sql = f"""

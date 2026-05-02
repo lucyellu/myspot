@@ -835,9 +835,6 @@ function bindKaraoke(audio, song) {
     return;
   }
 
-  // Progress-driven highlight (lyrics aren't time-stamped, so we estimate from
-  // total duration). Show the active line big + the next line dim underneath,
-  // and animate a per-line fill progress 0→1 used by the `fx-fill` effect.
   const lines = song.lyrics.filter((l) => l.text && l.text.trim());
   let lastIdx = -1;
   const handler = (e) => {
@@ -849,11 +846,29 @@ function bindKaraoke(audio, song) {
     const lineProgress = Math.min(1, Math.max(0, (t - idx * segment) / segment));
 
     if (idx !== lastIdx) {
-      const cur = lines[idx]?.text || "";
-      const nxt = lines[idx + 1]?.text || "";
-      overlay.innerHTML =
-        `<div class="lyric-line-current" data-text="${escapeHtml(cur)}">${escapeHtml(cur)}</div>` +
-        (nxt ? `<div class="lyric-line-next">${escapeHtml(nxt)}</div>` : "");
+      const lineMode = overlay.dataset.lineMode || "line";
+      if (lineMode === "paragraph") {
+        // Show a window of 10 lines: 2 past + current + 7 upcoming
+        const winStart = Math.max(0, idx - 2);
+        const winEnd = Math.min(lines.length - 1, idx + 7);
+        let html = "";
+        for (let i = winStart; i <= winEnd; i++) {
+          const txt = escapeHtml(lines[i].text);
+          if (i === idx) {
+            html += `<div class="lyric-line-current" data-text="${txt}">${txt}</div>`;
+          } else {
+            const cls = i < idx ? "lyric-line-para past" : "lyric-line-para";
+            html += `<div class="${cls}">${txt}</div>`;
+          }
+        }
+        overlay.innerHTML = html;
+      } else {
+        const cur = lines[idx]?.text || "";
+        const nxt = lines[idx + 1]?.text || "";
+        overlay.innerHTML =
+          `<div class="lyric-line-current" data-text="${escapeHtml(cur)}">${escapeHtml(cur)}</div>` +
+          (nxt ? `<div class="lyric-line-next">${escapeHtml(nxt)}</div>` : "");
+      }
       lastIdx = idx;
     }
     overlay.style.setProperty("--fill-progress", lineProgress.toFixed(3));

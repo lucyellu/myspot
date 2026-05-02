@@ -11,7 +11,7 @@ from .config import SUNO_LIBRARY, ASSETS_DIR
 from .db import init_db, tx
 from .sunosync_cache import SunoSyncCache
 from .sunometa_db import SunoMetaDB
-from .lyrics import parse_lyrics_file
+from .lyrics import parse_lyrics_file, parse_lyrics_text
 from .derivatives import split_version, build_relationships
 
 
@@ -143,9 +143,12 @@ def index_suno_library(conn, cache: SunoSyncCache, meta_db: SunoMetaDB | None = 
                     song_id = cur.lastrowid
                     inserted += 1
 
-                if txt_path_str:
-                    rows = parse_lyrics_file(txt)
-                    if rows:
+                lyrics_rows = parse_lyrics_file(txt) if txt_path_str else []
+                if not lyrics_rows and meta_entry.get("lyrics"):
+                    lyrics_rows = parse_lyrics_text(meta_entry["lyrics"])
+                if lyrics_rows:
+                    rows = lyrics_rows
+                if rows:
                         conn.execute("DELETE FROM lyric_lines WHERE song_id=?", (song_id,))
                         conn.execute("DELETE FROM lyric_fts WHERE song_id=?", (song_id,))
                         conn.executemany(
