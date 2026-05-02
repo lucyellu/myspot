@@ -7,7 +7,7 @@
 <link rel="icon" type="image/x-icon" href="/static/icon.ico" />
 <link rel="preconnect" href="https://fonts.googleapis.com" />
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
-<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=VT323&family=Pixelify+Sans:wght@400;500;600;700&family=Inter:wght@400;500;600;700&display=swap" />
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=VT323&family=Pixelify+Sans:wght@400;500;600;700&family=Inter:wght@400;500;600;700&family=Roboto:wght@400;700&family=Bebas+Neue&family=Playfair+Display:wght@400;700&family=Space+Grotesk:wght@400;700&family=Nunito:wght@400;700&family=Dancing+Script:wght@700&display=swap" />
 <link rel="stylesheet" href="/static/css/app.css" />
 <!-- Runtime config: sets window.MYSPOT_API_BASE for static deploys. Optional;
      missing file is fine (same-origin fallback). -->
@@ -93,9 +93,10 @@
             <option value="title">TITLE</option>
             <option value="version">VERSION</option>
           </select>
+          <button id="btn-sort-dir" class="ico-btn" title="Toggle sort direction">↓</button>
         </label>
         <label class="control-group control-size">SIZE
-          <input type="range" id="home-size" min="70" max="280" step="10" />
+          <input type="range" id="home-size" min="40" max="280" step="10" />
         </label>
         <div class="control-group view-toggle" role="radiogroup" aria-label="View mode">
           <button type="button" class="view-btn" data-view="grid" title="Grid view">▦</button>
@@ -209,7 +210,7 @@
     </a>
     <div class="card-body">
       <a class="card-title"></a>
-      <div class="card-sub"></div>
+      <div class="card-sub"><span class="card-dot"></span></div>
     </div>
   </article>
 </template>

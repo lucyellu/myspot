@@ -1,5 +1,5 @@
 import { api, mediaUrl } from "../api.js";
-import { fmtDuration, fmtAccount, el, clear } from "../util.js";
+import { fmtDuration, fmtAccount, channelColor, el, clear } from "../util.js";
 
 const PAGE = 60;
 
@@ -67,13 +67,18 @@ export async function renderHome({ account = null, q = null, tag = null } = {}) 
   });
 
   let sort = sortSel.value;
+  let dir = "desc";
   let offset = 0;
   let total = 0;
+
+  const dirBtn = document.getElementById("btn-sort-dir");
+  const updateDirBtn = () => { dirBtn.textContent = dir === "desc" ? "↓" : "↑"; };
+  dirBtn.onclick = () => { dir = dir === "desc" ? "asc" : "desc"; updateDirBtn(); loadPage(true); };
 
   async function loadPage(reset = false) {
     if (reset) { clear(grid); offset = 0; }
     status.textContent = "Loading...";
-    const data = await api.songs({ account, q, tag, limit: PAGE, offset, sort });
+    const data = await api.songs({ account, q, tag, limit: PAGE, offset, sort, dir });
     total = data.total;
     for (const s of data.items) grid.append(card(s));
     offset += data.items.length;
@@ -147,11 +152,13 @@ export function card(s) {
   if (s.version > 1) verBadge.textContent = `v${s.version}`; else verBadge.remove();
   durBadge.textContent = fmtDuration(s.duration);
   titleEl.textContent = s.title;
-  const subParts = [fmtAccount(s.account)];
-  if (s.play_count) subParts.push(`${s.play_count} plays`);
+  const dot = article.querySelector(".card-dot");
+  dot.style.background = channelColor(s.account);
+  dot.title = fmtAccount(s.account);
+  const subParts = [];
+  if (s.suno_play_count) subParts.push(`${s.suno_play_count.toLocaleString()} ♫`);
+  if (s.suno_upvote_count) subParts.push(`${s.suno_upvote_count} ♥`);
   if (s.gens_count) subParts.push(`${s.gens_count} gens`);
-  if (s.lyric_count) subParts.push(`${s.lyric_count} lines`);
-  if (s.has_cache) subParts.push("✓ cache");
   subEl.textContent = subParts.join(" · ");
   if (s.liked) {
     const liked = article.querySelector(".card-liked");

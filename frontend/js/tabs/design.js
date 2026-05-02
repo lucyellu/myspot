@@ -1,18 +1,18 @@
-/**
- * Design / Style tab.
- *
- * Settings persist per song in localStorage and apply live to the karaoke
- * lyric overlay via CSS custom properties + a few class toggles.
- */
 import { el, clear, toast } from "../util.js";
 
 const STORE_KEY = "myspot.design.v1";
 
 const FONTS = [
-  { id: "display", label: "Pixelify (display)", css: "var(--font-display)" },
-  { id: "pixel",   label: "VT323 (pixel)",      css: "var(--font-pixel)" },
-  { id: "body",    label: "Inter (clean)",      css: "var(--font-body)" },
-  { id: "mono",    label: "Mono (terminal)",    css: "var(--font-mono)" },
+  { id: "display",  label: "Pixelify — pixel display",  css: "var(--font-display)" },
+  { id: "pixel",    label: "VT323 — pixel terminal",    css: "var(--font-pixel)" },
+  { id: "roboto",   label: "Roboto — clean & readable", css: "var(--font-roboto)" },
+  { id: "grotesk",  label: "Space Grotesk — modern",    css: "var(--font-grotesk)" },
+  { id: "nunito",   label: "Nunito — rounded friendly", css: "var(--font-nunito)" },
+  { id: "playfair", label: "Playfair — elegant serif",  css: "var(--font-playfair)" },
+  { id: "bebas",    label: "Bebas Neue — bold caps",    css: "var(--font-bebas)" },
+  { id: "script",   label: "Dancing Script — handwritten", css: "var(--font-script)" },
+  { id: "body",     label: "Inter — system sans",       css: "var(--font-body)" },
+  { id: "mono",     label: "Mono — terminal",           css: "var(--font-mono)" },
 ];
 
 const PLACEMENTS = [
@@ -29,13 +29,27 @@ const EFFECTS = [
   { id: "scrim",   label: "Dark scrim band",       help: "Translucent backdrop for legibility on busy art." },
 ];
 
+const COLOR_PRESETS = [
+  { label: "White",      value: "#ffffff" },
+  { label: "Black",      value: "#000000" },
+  { label: "Yellow",     value: "#ffff00" },
+  { label: "Gold",       value: "#ffd700" },
+  { label: "Cyan",       value: "#00ffff" },
+  { label: "Hot pink",   value: "#ff69b4" },
+  { label: "Orange",     value: "#ff8c00" },
+  { label: "Neon green", value: "#39ff14" },
+  { label: "Sky blue",   value: "#87ceeb" },
+  { label: "Lavender",   value: "#c9aaff" },
+];
+
 const DEFAULTS = {
-  font: "display",
-  fontSize: 32,           // px
+  font: "roboto",
+  fontSize: 32,
   placement: "overlay-bottom",
-  color: "",              // "" = use --accent
-  fillFrom: "",           // "" = use --accent
-  fillTo: "",             // "" = use --accent-2
+  lineMode: "line",      // "line" = 2 lines | "paragraph" = ~10 lines block
+  color: "",
+  fillFrom: "",
+  fillTo: "",
   effects: ["fill", "glow", "scrim"],
 };
 
@@ -54,15 +68,6 @@ function save(songId, settings) {
   } catch { /* ignore */ }
 }
 
-/**
- * Apply settings to the live lyric-overlay element.
- *
- * Placement is handled by moving the overlay between two host containers:
- *   - .player-stage (overlay-top / overlay-bottom)
- *   - .lyric-strip-host directly below the player (below)
- * Both hosts exist in the watch template; this just toggles which one
- * actually contains the lyric-overlay element + the placement class.
- */
 export function applyDesignSettings(songId) {
   const overlay = document.getElementById("lyric-overlay");
   if (!overlay) return;
@@ -75,11 +80,14 @@ export function applyDesignSettings(songId) {
   overlay.style.setProperty("--lyric-fill-a", s.fillFrom || "var(--accent)");
   overlay.style.setProperty("--lyric-fill-b", s.fillTo || "var(--accent-2)");
 
+  // Communicate lineMode to the karaoke tick handler via dataset
+  overlay.dataset.lineMode = s.lineMode || "line";
+  overlay.classList.toggle("para-mode", s.lineMode === "paragraph");
+
   for (const e of EFFECTS) {
     overlay.classList.toggle(`fx-${e.id}`, (s.effects || []).includes(e.id));
   }
 
-  // Placement — move into the matching host
   for (const p of PLACEMENTS) overlay.classList.remove(`placement-${p.id}`);
   overlay.classList.add(`placement-${s.placement || "overlay-bottom"}`);
 
@@ -92,12 +100,54 @@ export function applyDesignSettings(songId) {
   }
 }
 
+// Color swatch row builder
+function renderColorRow(label, presets, currentVal, onChange) {
+  const row = el("div", { class: "design-color-row" });
+  const lbl = el("span", { class: "design-color-label" }, label);
+  const swatches = el("div", { class: "design-swatches" });
+
+  // Theme/accent swatch (value = "")
+  const themeSw = el("button", { type: "button", class: "swatch-btn", title: "Theme accent" });
+  themeSw.style.background = "var(--accent)";
+  themeSw.style.border = "2px dashed var(--ink)";
+  themeSw.onclick = () => { onChange(""); markActive(""); };
+  swatches.append(themeSw);
+
+  for (const p of presets) {
+    const sw = el("button", { type: "button", class: "swatch-btn", title: p.label });
+    sw.style.background = p.value;
+    if (p.value === "#000000") sw.style.border = "2px solid #555";
+    sw.onclick = () => { onChange(p.value); markActive(p.value); };
+    sw.dataset.val = p.value;
+    swatches.append(sw);
+  }
+
+  // Custom picker at end
+  const custom = el("input", { type: "color", class: "swatch-custom",
+    value: currentVal || "#c8e85f", title: "Custom color" });
+  custom.oninput = () => { onChange(custom.value); markActive(custom.value); };
+  swatches.append(custom);
+
+  function markActive(val) {
+    swatches.querySelectorAll(".swatch-btn").forEach((b) => b.classList.remove("active"));
+    if (!val) { themeSw.classList.add("active"); return; }
+    const match = [...swatches.querySelectorAll(".swatch-btn[data-val]")]
+      .find((b) => b.dataset.val === val);
+    if (match) match.classList.add("active");
+    custom.value = val || "#c8e85f";
+  }
+  markActive(currentVal);
+
+  row.append(lbl, swatches);
+  return row;
+}
+
 export function renderDesign(body, song) {
   clear(body);
   const settings = load(song.id);
 
   body.append(el("p", { class: "muted small", style: "margin-bottom:10px" },
-    "Style the karaoke lyric overlay on the player. Settings save per song."));
+    "Style the karaoke lyric overlay. Settings save per song."));
 
   // ── Font ──────────────────────────────────────────────────────
   const fontSection = el("section", { class: "gen-section" });
@@ -111,7 +161,6 @@ export function renderDesign(body, song) {
   fontSel.onchange = () => { settings.font = fontSel.value; persist(); };
   fontSection.append(fontSel);
 
-  // Font size slider
   const sizeRow = el("div", { class: "design-slider-row" });
   const sizeLabel = el("span", { class: "design-slider-label" }, `Size: ${settings.fontSize}px`);
   const sizeSlider = el("input", { type: "range", min: "14", max: "72", step: "1", value: String(settings.fontSize) });
@@ -123,6 +172,26 @@ export function renderDesign(body, song) {
   sizeRow.append(sizeLabel, sizeSlider);
   fontSection.append(sizeRow);
   body.append(fontSection);
+
+  // ── Line mode ─────────────────────────────────────────────────
+  const modeSection = el("section", { class: "gen-section" });
+  modeSection.append(el("h5", { class: "section-h" }, "Lines"));
+  const modeRow = el("div", { class: "design-linemode-row" });
+  const linBtn = el("button", { type: "button", class: "design-linemode-btn" + (settings.lineMode !== "paragraph" ? " active" : "") }, "LINE (2)");
+  const paraBtn = el("button", { type: "button", class: "design-linemode-btn" + (settings.lineMode === "paragraph" ? " active" : "") }, "PARAGRAPH (10)");
+  linBtn.onclick = () => {
+    settings.lineMode = "line";
+    linBtn.classList.add("active"); paraBtn.classList.remove("active");
+    persist();
+  };
+  paraBtn.onclick = () => {
+    settings.lineMode = "paragraph";
+    paraBtn.classList.add("active"); linBtn.classList.remove("active");
+    persist();
+  };
+  modeRow.append(linBtn, paraBtn);
+  modeSection.append(modeRow);
+  body.append(modeSection);
 
   // ── Placement ─────────────────────────────────────────────────
   const placeSection = el("section", { class: "gen-section" });
@@ -140,33 +209,14 @@ export function renderDesign(body, song) {
   // ── Colors ────────────────────────────────────────────────────
   const colorSection = el("section", { class: "gen-section" });
   colorSection.append(el("h5", { class: "section-h" }, "Colors"));
-  colorSection.append(el("p", { class: "muted small", style: "margin: -4px 0 8px" },
-    "Empty = inherit theme accent."));
-
-  const baseColor = el("input", { type: "color", value: settings.color || "#c8e85f" });
-  const baseClear = el("button", { class: "btn small-btn", type: "button" }, "Reset");
-  const fillA = el("input", { type: "color", value: settings.fillFrom || "#c8e85f" });
-  const fillAClear = el("button", { class: "btn small-btn", type: "button" }, "Reset");
-  const fillB = el("input", { type: "color", value: settings.fillTo || "#ff7a4a" });
-  const fillBClear = el("button", { class: "btn small-btn", type: "button" }, "Reset");
-
-  baseColor.onchange = () => { settings.color = baseColor.value; persist(); };
-  baseClear.onclick = () => {
-    settings.color = ""; baseColor.value = "#c8e85f"; persist();
-    toast("Reset base color");
-  };
-  fillA.onchange = () => { settings.fillFrom = fillA.value; persist(); };
-  fillAClear.onclick = () => { settings.fillFrom = ""; fillA.value = "#c8e85f"; persist(); };
-  fillB.onchange = () => { settings.fillTo = fillB.value; persist(); };
-  fillBClear.onclick = () => { settings.fillTo = ""; fillB.value = "#ff7a4a"; persist(); };
 
   colorSection.append(
-    el("div", { class: "design-color-row" },
-      el("span", { class: "design-color-label" }, "Base text"), baseColor, baseClear),
-    el("div", { class: "design-color-row" },
-      el("span", { class: "design-color-label" }, "Fill from"), fillA, fillAClear),
-    el("div", { class: "design-color-row" },
-      el("span", { class: "design-color-label" }, "Fill to"), fillB, fillBClear),
+    renderColorRow("Base text", COLOR_PRESETS, settings.color,
+      (v) => { settings.color = v; persist(); }),
+    renderColorRow("Fill from", COLOR_PRESETS, settings.fillFrom,
+      (v) => { settings.fillFrom = v; persist(); }),
+    renderColorRow("Fill to", COLOR_PRESETS, settings.fillTo,
+      (v) => { settings.fillTo = v; persist(); }),
   );
   body.append(colorSection);
 

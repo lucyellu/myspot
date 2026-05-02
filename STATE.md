@@ -1,31 +1,75 @@
 # myspot — Current State
 
-> Self-contained snapshot for cold pickup. Read STATE.md → PLAN.md → DESIGN-BRIEF.md to continue.
+> Self-contained snapshot for cold pickup. Read this file before touching any code.
 
 ## Pick up here
 
-**Repo:** https://github.com/lucyellu/myspot — `main` branch, latest commit on `1f90697`+.
-**Local:** `C:\Users\lucyl\Desktop\myspot\` — double-click `myspot.lnk` to launch.
-**Netlify:** https://myspot-web.netlify.app — static frontend only; backend must be reachable via Cloudflare tunnel (see below).
+**Repo:** https://github.com/lucyellu/myspot
+**Active branch: `dev`** (created 2026-05-01, NOT yet pushed to origin)
+**Local:** `C:\Users\lucyl\Desktop\myspot\`
+**Netlify:** https://myspot-web.netlify.app — static frontend only; backend must be reachable via Cloudflare tunnel.
+
+### Start the app
+```
+double-click Desktop\myspot.lnk   → launches dev branch at http://127.0.0.1:7777
+```
+start.bat runs `git checkout dev` before launching — shortcut always uses dev code.
 
 ---
 
-## Running the app
+## What changed in `dev` (2026-05-01) — NOT on main yet
 
-```bash
-# Local only
-double-click Desktop\myspot.lnk          # or:
-cd C:\Users\lucyl\Desktop\myspot
-python -m backend.app                     # serves http://127.0.0.1:7777
+### 1. suno_nightly metadata integration (schema v3)
+- **`backend/sunometa_db.py`** (NEW) — reads `C:\Users\lucyl\Desktop\suno_nightly\suno_meta.db`
+  by suno_id, returns play_count, upvote_count, is_liked, model_name, style, video_url
+- **`backend/db.py`** — SCHEMA_VERSION bumped 2→3; migration adds 6 columns to songs:
+  `suno_play_count`, `suno_upvote_count`, `suno_is_liked`, `suno_model`, `suno_style`, `suno_video_url`
+- **`backend/library.py`** — reindex now loads SunoMetaDB, enriches songs on upsert;
+  also falls back to suno_meta.db lyrics when no .txt file exists for a song
+- **`backend/app.py`** — both list + detail song endpoints expose suno_* fields
 
-# Public (Cloudflare quick tunnel)
-double-click Desktop\myspot (public).lnk  # opens backend + cloudflared in separate windows
-# cloudflared window prints: https://xxxx.trycloudflare.com
-# Open https://myspot-web.netlify.app → click ⚙ in topbar → paste tunnel URL → Save & Reload
+### 2. UI improvements
+- **Cards** show `suno_play_count` (♫) and `suno_upvote_count` (♥) — Suno platform counts.
+  Local myspot play count removed from cards. "✓ cache" badge removed.
+- **Sort direction toggle** — ↑↓ button beside Sort dropdown; passes `dir=asc|desc` to API.
+  All sort options respect direction. `popular` sort now orders by `suno_play_count`.
+- **Size slider** min reduced 70→40px
+- **Lyrics fallback** — songs without .txt files get lyrics from suno_meta.db on reindex
 
-# Re-fingerprint after adding songs
-click ♫ button in topbar                  # computes MFCC audio fingerprints in background
+### After switching to dev or restarting server
+1. DB auto-migrates to v3 on startup
+2. Click ↻ (reindex) in topbar to populate suno_* columns and lyrics for all songs
+3. Songs with a suno_id (most of them) will show Suno play/like counts after reindex
+
+---
+
+## suno_nightly tool (separate project)
+
+**Location:** `C:\Users\lucyl\Desktop\suno_nightly\`
+**DB:** `suno_nightly\suno_meta.db` — 8600+ songs, all 6 accounts synced 2026-05-01
+**Desktop shortcut:** "Suno Sync" (myspot icon)
+
+### BLOCKER: tokens expire in 1 hour
+The script supports `"cookie"` field in accounts.json (`__client` from suno.com) which auto-refreshes
+JWT at runtime. **No accounts have cookies set yet** — currently using 1-hour JWTs manually.
+
+**To fix (once per account):** log into suno.com → F12 → Application → Cookies → suno.com
+→ copy `__client` value → add as `"cookie": "..."` in `accounts.json`
+
+**Nightly scheduler not yet registered.** After cookies set, run as Admin:
 ```
+C:\Users\lucyl\Desktop\suno_nightly\setup_scheduler.ps1
+```
+
+### accounts.json format
+```json
+[{ "name": "elludesign", "cookie": "dvb_...", "token": "eyJ..." }]
+```
+
+### Remaining work on suno_nightly
+- [ ] Add `__client` cookies for all 6 accounts
+- [ ] Run setup_scheduler.ps1 as admin to register 2am nightly task
+- [ ] Optional: add `prefer_wav` / `download_video` toggle per account (for when premium)
 
 ---
 
@@ -34,105 +78,64 @@ click ♫ button in topbar                  # computes MFCC audio fingerprints i
 ```
 myspot/
 ├── backend/
-│   ├── app.py          ~55 endpoints, FastAPI, schema v2
-│   ├── db.py           SQLite schema — SCHEMA_VERSION=2, 14 tables + lyric_fts + mfcc col
-│   ├── library.py      full reindex (no incremental)
-│   ├── fingerprint.py  librosa MFCC extraction + cosine_sim (NEW)
+│   ├── app.py          ~55 endpoints, FastAPI
+│   ├── db.py           SQLite schema v3, 14 tables + lyric_fts
+│   ├── library.py      full reindex; uses SunoSyncCache + SunoMetaDB
+│   ├── sunometa_db.py  reads suno_nightly/suno_meta.db (NEW in dev)
+│   ├── sunosync_cache.py  reads legacy library_cache.json
+│   ├── fingerprint.py  librosa MFCC + cosine_sim
 │   ├── derivatives.py  filename version inference
-│   ├── lyrics.py       [Section]-bracket parser
+│   ├── lyrics.py       [Section]-bracket parser; parse_lyrics_text() for strings
 │   ├── render.py       ffmpeg slideshow MP4 export
 │   ├── config.py       paths + .env / secrets/ resolution
 │   └── ai/             tool registry, queue, claude/deepseek/gemini/pollinations/hf/grok
 ├── frontend/
-│   ├── index.html      shell + templates; ⚙ backend-URL picker, ♫ fingerprint btn
-│   ├── css/app.css     cassette/radio theme, dual-shelf layout, preview overlay
+│   ├── index.html      shell + templates; sort dir button, size slider min=40
+│   ├── css/app.css
 │   └── js/
-│       ├── main.js     router + drawer + search + api-popover + fingerprint btn
-│       ├── api.js      all API calls; BASE from localStorage/config.js/?api=
-│       ├── sidepanel.js
-│       ├── theme.js
-│       ├── util.js
-│       ├── views/home.js, watch.js, assets.js
-│       └── tabs/generate.js, lyrics.js, design.js, sources.js, prompts.js, queue.js, notes.js
+│       ├── main.js
+│       ├── api.js      songs() accepts dir=asc|desc param
+│       ├── util.js     fmtAccount strips sunosync_ prefix
+│       ├── views/home.js   dir state + toggle btn; cards show suno_play_count/upvote
+│       └── views/watch.js, assets.js, tabs/...
 ├── data/myspot.db      SQLite WAL (gitignored)
-├── data/gens/          AI outputs (gitignored)
-├── assets/<folder>/    personal media (gitignored)
-├── secrets/            API keys (gitignored)
-├── start.bat           local launcher
-├── start_public.bat    local + cloudflared tunnel launcher
-├── make_shortcut.ps1   recreates Desktop .lnk shortcuts
-└── requirements.txt    includes librosa
+├── start.bat           git checkout dev then launch
+└── make_shortcut.ps1   recreates Desktop .lnk shortcuts
 ```
 
 ---
 
-## SQLite schema (v2)
+## SQLite schema (v3)
 
-`songs` table has `mfcc TEXT` column (JSON float[20], nullable — populated by /api/fingerprint-all).
-All other tables unchanged from v1. Migration runs automatically on startup.
+`songs` table key columns:
+- `suno_id` — Suno UUID (match key to suno_meta.db)
+- `mfcc` — JSON float[20], nullable (MFCC fingerprint)
+- `suno_play_count`, `suno_upvote_count`, `suno_is_liked` — from Suno API
+- `suno_model`, `suno_style`, `suno_video_url` — from Suno API
 
-| Table | Purpose |
-|---|---|
-| `songs` | every track; mfcc col for audio similarity |
-| `lyric_lines` + `lyric_fts` | parsed lyrics + FTS5 search |
-| `relationships` | derivative chain (parent_id, child_id, kind) |
-| `assets` | personal media files |
-| `gens` | AI/manual visuals per song |
-| `prompts` | template vault |
-| `jobs` | background gen queue |
-| `notes` | per-song notes |
-| `play_history` | playback log |
-| `playlists`, `playlist_songs` | (schema only, unused) |
-| `edits`, `clips` | (schema only, M5b) |
+Migration runs automatically on startup (v2→v3 adds the 6 suno_* columns).
 
 ---
 
-## Key frontend features (current)
-
-**Watch page layout:**
-- Player (visual stage + transport) at top
-- MEDIA shelf + UP NEXT shelf side-by-side below player — both always open, independently scrollable
-- Clicking a media tile → loads into visual stage (`stageUrl`); "+ track" button attaches to track strip
-- Side panel: FM-dial tabs (GENERATE, LYRICS, DESIGN, SOURCES, PROMPTS, BATCH)
-
-**Sources tab:**
-- Expand/collapse inline tree with ▶/▼ toggle — no page navigation needed
-- Seen-set prevents circular recursion (songs already in tree show "already shown")
-- ↗ link still navigates to that song if wanted
-
-**Audio similarity (`/api/songs/{id}/related`):**
-- Uses MFCC cosine similarity when fingerprints exist → `reason: "audio"`
-- Falls back to title/account matching when no fingerprints
-
-**Assets view:**
-- Click asset card → opens preview lightbox (image/video full size)
-- "Attach to song…" button in lightbox for associating with a song
-- Esc or click outside closes
-
-**Netlify / remote access:**
-- ⚙ button in topbar → paste Cloudflare tunnel URL → saves to localStorage → reloads
-- `window.MYSPOT_API_BASE` read from localStorage before config.js on every load
-- All `mediaUrl.*` helpers prepend BASE so audio/covers/gens work remotely
-
-**Left sidebar:**
-- Smart-tag entries (LIVE, ACOUSTIC, REMIX, etc.) — no emojis
-
----
-
-## Endpoints (additions since original STATE)
+## Key API endpoints
 
 ```
-GET  /api/songs/{id}/related   → MFCC cosine similarity rank when fingerprints exist
-POST /api/fingerprint-all      → background MFCC computation for all songs missing mfcc
+GET  /api/songs?sort=recent|title|version|popular|liked|gens|recent_played&dir=asc|desc
+GET  /api/songs/{id}           → full detail incl suno_* fields
+GET  /api/songs/{id}/related   → MFCC cosine similarity rank
+POST /api/reindex              → async full reindex (populates suno_* from suno_meta.db)
+GET  /api/reindex/status
+POST /api/fingerprint-all      → background MFCC computation
+GET  /api/top-songs?by=popular|liked|gens|recent_played&limit&account
+GET  /api/channels
+GET  /api/stats
 POST /api/songs/{id}/like
 POST /api/songs/{id}/play
 GET  /api/songs/{id}/plays
-GET  /api/top-songs?by=popular|liked|gens|recent_played&limit&account
-POST /api/reindex / GET /api/reindex/status
 POST /api/songs/{id}/export
+POST /api/songs/{id}/gens/generate
 POST /api/extension/current-song-set
 GET  /api/extension/current-song
-POST /api/extension/import-image
 ```
 
 ---
@@ -147,63 +150,15 @@ POST /api/extension/import-image
 | Nano Banana (Gemini) | image | $25 funded | GEMINI_API_KEY |
 | Gemini Vision (inspire) | vision | 250/day free | GEMINI_API_KEY |
 | HF FLUX-schnell | image | ~30/mo free | HF_TOKEN |
-| HF LTX-Video / CogVideoX / Wan | video | ~3-60/mo free | HF_TOKEN |
-| Claude Sonnet | text | — | ANTHROPIC_API_KEY |
-| Grok Imagine | image | — | XAI_API_KEY |
-
-Default image tool: `pollinations-realism`. Default text model: `gemini-text`.
 
 ---
 
-## Library state (last full reindex)
+## Pending / known issues
 
-- ~5,720 songs across 6 Suno accounts
-- ~109,928 lyric lines (FTS5 searchable)
-- ~2,651 derivative relationships
-- ~1,020 personal assets
-- MFCC fingerprints: run ♫ button to populate (first time ~10 min for full library)
-
----
-
-## Known issues / caveats
-
-- Re-index is full, not incremental (~110s)
-- Suno covers are 40×40px (SunoSync thumbnails) — displayed OK with object-fit:cover
-- Lyrics highlight is progress-based, not real timestamps
-- HF API may 503 on cold start — retry after 30s
-- Slideshow render is hard-cut (no crossfade yet)
-- MFCC fingerprinting requires `pip install librosa` — not auto-installed
-
----
-
-## Quick recipes
-
-```bash
-# Inspect db
-sqlite3 data/myspot.db "SELECT id, title, version, account FROM songs LIMIT 5"
-
-# Check fingerprint coverage
-sqlite3 data/myspot.db "SELECT COUNT(*) FROM songs WHERE mfcc IS NOT NULL"
-
-# Trigger auto pipeline
-curl -X POST http://127.0.0.1:7777/api/songs/27/auto \
-  -H 'Content-Type: application/json' -d '{"count":4}'
-
-# Check health / tools
-curl http://127.0.0.1:7777/api/health
-
-# Full reindex
-python -m backend.library
-```
-
----
-
-## Files to read for cold pickup
-
-1. **STATE.md** (this)
-2. **PLAN.md** — phased roadmap
-3. **DESIGN-BRIEF.md** — frontend aesthetic decisions
-4. **MODELS.md** — AI pricing + free tiers
-5. `backend/app.py` — all endpoints
-6. `backend/db.py` — full schema
-7. `frontend/js/api.js` — every API call
+- [ ] Push `dev` branch to origin (not done yet)
+- [ ] Channel display name aliases (e.g. sunosync_elludesign → "Ellu Design") — not implemented; fmtAccount strips prefix only
+- [ ] suno_nightly cookie auth setup (see BLOCKER above)
+- [ ] Reindex is full not incremental (~several minutes for 8600 songs)
+- [ ] First fingerprint run ~10 min for full library
+- [ ] `pip install librosa` required for MFCC (not auto-installed)
+- [ ] Lyrics timestamps are progress-based not real

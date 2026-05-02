@@ -7,7 +7,9 @@ Run with:
 import asyncio
 import json
 import os
+import re
 import threading
+from collections import defaultdict
 from pathlib import Path  # noqa
 
 from fastapi import FastAPI, HTTPException, Query, Request, Body, UploadFile, File
@@ -98,16 +100,36 @@ def _safe_path(p: str | None) -> str | None:
     return str(p).replace("\\", "/")
 
 
+def canonical_account(name: str) -> str:
+    """Return the display-canonical form of a raw folder/account name.
+    Strips sunosync_ prefix and trailing date suffixes like _2026_April_17."""
+    name = re.sub(r"^sunosync_?", "", name)
+    name = re.sub(r"_\d{4}_[A-Za-z]+_\d{1,2}$", "", name)
+    return name or "main"
+
+
+def _expand_account(account: str) -> list[str]:
+    """Return all raw account names from the DB that share the same canonical name."""
+    cn = canonical_account(account)
+    all_accounts = [r[0] for r in _conn.execute("SELECT DISTINCT account FROM songs")]
+    matched = [a for a in all_accounts if canonical_account(a) == cn]
+    return matched or [account]
+
+
 # ----------------------------- Channels -----------------------------
 
 @app.get("/api/channels")
 def list_channels():
     rows = _conn.execute(
-        """SELECT account, COUNT(*) AS song_count,
-                  SUM(CASE WHEN jpg_path IS NOT NULL THEN 1 ELSE 0 END) AS with_cover
-           FROM songs GROUP BY account ORDER BY song_count DESC"""
+        "SELECT account, COUNT(*) AS song_count FROM songs GROUP BY account"
     ).fetchall()
-    return _rows(rows)
+    grouped: dict[str, int] = defaultdict(int)
+    for r in rows:
+        grouped[canonical_account(r["account"])] += r["song_count"]
+    return sorted(
+        [{"account": k, "song_count": v} for k, v in grouped.items()],
+        key=lambda x: -x["song_count"],
+    )
 
 
 # ----------------------------- Songs --------------------------------
@@ -120,12 +142,15 @@ def list_songs(
     limit: int = Query(60, ge=1, le=500),
     offset: int = Query(0, ge=0),
     sort: str = Query("recent", regex="^(recent|title|version|popular|liked|gens|recent_played)$"),
+    dir: str = Query("desc", regex="^(asc|desc)$"),
 ):
     where = []
     args: list = []
     if account:
-        where.append("s.account = ?")
-        args.append(account)
+        raw_accounts = _expand_account(account)
+        placeholders = ",".join("?" * len(raw_accounts))
+        where.append(f"s.account IN ({placeholders})")
+        args.extend(raw_accounts)
     if q:
         # Match title/base_title/genre LIKE OR lyric FTS, dedupe via UNION-via-subquery
         where.append(
@@ -140,20 +165,22 @@ def list_songs(
             where.append(clause)
             args.extend(params)
 
+    D, A = ("DESC", "ASC") if dir == "desc" else ("ASC", "DESC")
     order = {
-        "recent": "s.id DESC",
-        "title": "s.base_title ASC, s.version ASC",
-        "version": "s.version DESC, s.id DESC",
-        "popular": "play_count DESC, s.id DESC",
-        "liked": "s.liked DESC, s.id DESC",
-        "gens": "gens_count DESC, s.id DESC",
-        "recent_played": "last_played_at DESC NULLS LAST, s.id DESC",
+        "recent":       f"s.id {D}",
+        "title":        f"s.base_title {D}, s.version {D}",
+        "version":      f"s.version {D}, s.id {D}",
+        "popular":      f"s.suno_play_count {D} NULLS LAST, s.id {D}",
+        "liked":        f"s.liked {D}, s.id {D}",
+        "gens":         f"gens_count {D}, s.id {D}",
+        "recent_played": f"last_played_at {D} NULLS LAST, s.id {D}",
     }[sort]
 
     sql = f"""
         SELECT s.id, s.title, s.base_title, s.version, s.account, s.genre, s.bpm,
                s.duration, s.suno_date, s.jpg_path, s.suno_id IS NOT NULL AS has_cache,
-               s.liked,
+               s.liked, s.suno_play_count, s.suno_upvote_count, s.suno_is_liked,
+               s.suno_model, s.suno_style,
                (SELECT COUNT(*) FROM lyric_lines ll WHERE ll.song_id = s.id) AS lyric_count,
                (SELECT COUNT(*) FROM play_history ph WHERE ph.song_id = s.id) AS play_count,
                (SELECT MAX(played_at) FROM play_history ph WHERE ph.song_id = s.id) AS last_played_at,
@@ -243,6 +270,8 @@ def get_song(song_id: int):
         """SELECT s.id, s.suno_id, s.title, s.base_title, s.version, s.artist, s.account,
                   s.genre, s.bpm, s.prompt, s.duration, s.mp3_path, s.jpg_path, s.txt_path,
                   s.wav_path, s.mid_path, s.suno_date, s.indexed_at, s.liked,
+                  s.suno_play_count, s.suno_upvote_count, s.suno_is_liked,
+                  s.suno_model, s.suno_style, s.suno_video_url,
                   (SELECT COUNT(*) FROM play_history ph WHERE ph.song_id = s.id) AS play_count,
                   (SELECT MAX(played_at) FROM play_history ph WHERE ph.song_id = s.id) AS last_played_at
            FROM songs s WHERE s.id = ?""",
@@ -419,8 +448,10 @@ def top_songs(
     where = []
     args: list = []
     if account:
-        where.append("s.account = ?")
-        args.append(account)
+        raw_accounts = _expand_account(account)
+        placeholders = ",".join("?" * len(raw_accounts))
+        where.append(f"s.account IN ({placeholders})")
+        args.extend(raw_accounts)
 
     base = """
         SELECT s.id, s.title, s.base_title, s.version, s.account, s.genre, s.bpm,

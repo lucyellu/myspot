@@ -65,7 +65,7 @@ async function req(path, opts = {}) {
 export const api = {
   stats: () => req("/api/stats"),
   channels: () => req("/api/channels"),
-  songs: ({ account = null, q = null, tag = null, limit = 60, offset = 0, sort = "recent" } = {}) => {
+  songs: ({ account = null, q = null, tag = null, limit = 60, offset = 0, sort = "recent", dir = "desc" } = {}) => {
     // sort ∈ recent | title | version | popular | liked | gens | recent_played
     const u = new URLSearchParams();
     if (account) u.set("account", account);
@@ -74,6 +74,7 @@ export const api = {
     u.set("limit", limit);
     u.set("offset", offset);
     u.set("sort", sort);
+    u.set("dir", dir);
     return req(`/api/songs?${u}`);
   },
   smartTags: () => req("/api/smart-tags"),

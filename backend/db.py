@@ -3,7 +3,7 @@ from pathlib import Path
 from contextlib import contextmanager
 from .config import DB_PATH
 
-SCHEMA_VERSION = 2
+SCHEMA_VERSION = 3
 
 SCHEMA = """
 CREATE TABLE IF NOT EXISTS meta (
@@ -219,6 +219,20 @@ def init_db() -> sqlite3.Connection:
                 conn.execute("ALTER TABLE songs ADD COLUMN mfcc TEXT")
             except Exception:
                 pass
+        if stored < 3:
+            for col, typ in [
+                ("suno_play_count",   "INTEGER"),
+                ("suno_upvote_count", "INTEGER"),
+                ("suno_is_liked",     "INTEGER"),
+                ("suno_model",        "TEXT"),
+                ("suno_style",        "TEXT"),
+                ("suno_video_url",    "TEXT"),
+            ]:
+                try:
+                    conn.execute(f"ALTER TABLE songs ADD COLUMN {col} {typ}")
+                except Exception:
+                    pass
+        if stored < SCHEMA_VERSION:
             conn.execute(
                 "UPDATE meta SET value=? WHERE key='schema_version'",
                 (str(SCHEMA_VERSION),),
