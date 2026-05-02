@@ -483,8 +483,18 @@ main {
   letter-spacing: 0;
   color: var(--ink-mute);
   margin-top: 1px;
-  display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical;
-  overflow: hidden;
+  display: flex; align-items: center; gap: 3px;
+  overflow: hidden; white-space: nowrap; text-overflow: ellipsis;
+}
+.card-dot {
+  display: inline-block; flex-shrink: 0;
+  width: 7px; height: 7px; border-radius: 50%;
+  background: #888;
+}
+.channel-dot {
+  display: inline-block; flex-shrink: 0;
+  width: 7px; height: 7px; border-radius: 50%;
+  background: #888; margin-right: 4px; vertical-align: middle;
 }
 
 /* ========== Watch view ========== */

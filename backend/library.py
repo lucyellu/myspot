@@ -91,8 +91,17 @@ def index_suno_library(conn, cache: SunoSyncCache, meta_db: SunoMetaDB | None = 
                 suno_date = cache_entry.get("date") or None
                 title = cache_entry.get("title") or stem
 
-                # Enrich with live Suno API metadata if available
-                meta_entry = (meta_db.lookup(suno_id) if meta_db and suno_id else None) or {}
+                # Enrich with live Suno API metadata if available.
+                # For suno_nightly-downloaded files (no library_cache entry), fall
+                # back to matching by the local_mp3 path stored in suno_meta.db.
+                meta_entry = (meta_db.lookup(suno_id) if meta_db and suno_id else None)
+                if meta_entry is None and meta_db:
+                    path_meta = meta_db.lookup_by_path(str(mp3_file))
+                    if path_meta:
+                        meta_entry = path_meta
+                        if not suno_id:
+                            suno_id = path_meta.get("id")
+                meta_entry = meta_entry or {}
                 suno_play_count   = meta_entry.get("play_count")
                 suno_upvote_count = meta_entry.get("upvote_count")
                 suno_is_liked     = meta_entry.get("is_liked")
@@ -147,19 +156,17 @@ def index_suno_library(conn, cache: SunoSyncCache, meta_db: SunoMetaDB | None = 
                 if not lyrics_rows and meta_entry.get("lyrics"):
                     lyrics_rows = parse_lyrics_text(meta_entry["lyrics"])
                 if lyrics_rows:
-                    rows = lyrics_rows
-                if rows:
-                        conn.execute("DELETE FROM lyric_lines WHERE song_id=?", (song_id,))
-                        conn.execute("DELETE FROM lyric_fts WHERE song_id=?", (song_id,))
-                        conn.executemany(
-                            "INSERT INTO lyric_lines(song_id, idx, text, section) VALUES(?,?,?,?)",
-                            [(song_id, i, t, sec) for (i, t, sec) in rows],
-                        )
-                        conn.executemany(
-                            "INSERT INTO lyric_fts(text, song_id) VALUES(?,?)",
-                            [(t, song_id) for (_, t, _) in rows],
-                        )
-                        lyric_count += len(rows)
+                    conn.execute("DELETE FROM lyric_lines WHERE song_id=?", (song_id,))
+                    conn.execute("DELETE FROM lyric_fts WHERE song_id=?", (song_id,))
+                    conn.executemany(
+                        "INSERT INTO lyric_lines(song_id, idx, text, section) VALUES(?,?,?,?)",
+                        [(song_id, i, t, sec) for (i, t, sec) in lyrics_rows],
+                    )
+                    conn.executemany(
+                        "INSERT INTO lyric_fts(text, song_id) VALUES(?,?)",
+                        [(t, song_id) for (_, t, _) in lyrics_rows],
+                    )
+                    lyric_count += len(lyrics_rows)
 
                 if verbose and (inserted + updated) % 200 == 0:
                     print(f"  ... {inserted + updated} songs ({inserted} new)")

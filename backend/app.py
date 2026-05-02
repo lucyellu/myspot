@@ -7,7 +7,9 @@ Run with:
 import asyncio
 import json
 import os
+import re
 import threading
+from collections import defaultdict
 from pathlib import Path  # noqa
 
 from fastapi import FastAPI, HTTPException, Query, Request, Body, UploadFile, File
@@ -98,16 +100,36 @@ def _safe_path(p: str | None) -> str | None:
     return str(p).replace("\\", "/")
 
 
+def canonical_account(name: str) -> str:
+    """Return the display-canonical form of a raw folder/account name.
+    Strips sunosync_ prefix and trailing date suffixes like _2026_April_17."""
+    name = re.sub(r"^sunosync_?", "", name)
+    name = re.sub(r"_\d{4}_[A-Za-z]+_\d{1,2}$", "", name)
+    return name or "main"
+
+
+def _expand_account(account: str) -> list[str]:
+    """Return all raw account names from the DB that share the same canonical name."""
+    cn = canonical_account(account)
+    all_accounts = [r[0] for r in _conn.execute("SELECT DISTINCT account FROM songs")]
+    matched = [a for a in all_accounts if canonical_account(a) == cn]
+    return matched or [account]
+
+
 # ----------------------------- Channels -----------------------------
 
 @app.get("/api/channels")
 def list_channels():
     rows = _conn.execute(
-        """SELECT account, COUNT(*) AS song_count,
-                  SUM(CASE WHEN jpg_path IS NOT NULL THEN 1 ELSE 0 END) AS with_cover
-           FROM songs GROUP BY account ORDER BY song_count DESC"""
+        "SELECT account, COUNT(*) AS song_count FROM songs GROUP BY account"
     ).fetchall()
-    return _rows(rows)
+    grouped: dict[str, int] = defaultdict(int)
+    for r in rows:
+        grouped[canonical_account(r["account"])] += r["song_count"]
+    return sorted(
+        [{"account": k, "song_count": v} for k, v in grouped.items()],
+        key=lambda x: -x["song_count"],
+    )
 
 
 # ----------------------------- Songs --------------------------------
@@ -125,8 +147,10 @@ def list_songs(
     where = []
     args: list = []
     if account:
-        where.append("s.account = ?")
-        args.append(account)
+        raw_accounts = _expand_account(account)
+        placeholders = ",".join("?" * len(raw_accounts))
+        where.append(f"s.account IN ({placeholders})")
+        args.extend(raw_accounts)
     if q:
         # Match title/base_title/genre LIKE OR lyric FTS, dedupe via UNION-via-subquery
         where.append(
@@ -424,8 +448,10 @@ def top_songs(
     where = []
     args: list = []
     if account:
-        where.append("s.account = ?")
-        args.append(account)
+        raw_accounts = _expand_account(account)
+        placeholders = ",".join("?" * len(raw_accounts))
+        where.append(f"s.account IN ({placeholders})")
+        args.extend(raw_accounts)
 
     base = """
         SELECT s.id, s.title, s.base_title, s.version, s.account, s.genre, s.bpm,

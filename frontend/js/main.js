@@ -2,7 +2,7 @@ import { api } from "./api.js";
 import { renderHome } from "./views/home.js";
 import { renderWatch } from "./views/watch.js";
 import { renderAssets } from "./views/assets.js";
-import { fmtAccount, debounce, toast } from "./util.js";
+import { fmtAccount, channelColor, debounce, toast } from "./util.js";
 import { bindThemePopover } from "./theme.js";
 
 async function loadChannels() {
@@ -20,7 +20,8 @@ async function loadChannels() {
       const a = document.createElement("a");
       a.href = `#/channel/${encodeURIComponent(c.account)}`;
       a.dataset.account = c.account;
-      a.innerHTML = `<span class="count">${c.song_count.toLocaleString()}</span>${fmtAccount(c.account)}`;
+      const color = channelColor(c.account);
+      a.innerHTML = `<span class="channel-dot" style="background:${color}"></span><span class="count">${c.song_count.toLocaleString()}</span>${c.account}`;
       list.append(a);
     }
   } catch (e) {

@@ -1,5 +1,5 @@
 import { api, mediaUrl } from "../api.js";
-import { fmtDuration, fmtAccount, el, clear } from "../util.js";
+import { fmtDuration, fmtAccount, channelColor, el, clear } from "../util.js";
 
 const PAGE = 60;
 
@@ -152,11 +152,13 @@ export function card(s) {
   if (s.version > 1) verBadge.textContent = `v${s.version}`; else verBadge.remove();
   durBadge.textContent = fmtDuration(s.duration);
   titleEl.textContent = s.title;
-  const subParts = [fmtAccount(s.account)];
+  const dot = article.querySelector(".card-dot");
+  dot.style.background = channelColor(s.account);
+  dot.title = fmtAccount(s.account);
+  const subParts = [];
   if (s.suno_play_count) subParts.push(`${s.suno_play_count.toLocaleString()} ♫`);
   if (s.suno_upvote_count) subParts.push(`${s.suno_upvote_count} ♥`);
   if (s.gens_count) subParts.push(`${s.gens_count} gens`);
-  if (s.lyric_count) subParts.push(`${s.lyric_count} lines`);
   subEl.textContent = subParts.join(" · ");
   if (s.liked) {
     const liked = article.querySelector(".card-liked");

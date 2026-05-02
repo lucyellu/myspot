@@ -12,7 +12,17 @@ export function fmtDuration(seconds) {
 
 export function fmtAccount(name) {
   if (!name) return "—";
-  return name.replace(/^sunosync_?/, "") || "main";
+  name = name.replace(/^sunosync_?/, "");
+  name = name.replace(/_\d{4}_[A-Za-z]+_\d{1,2}$/, "");
+  return name || "main";
+}
+
+const _CH_PALETTE = ["#e84","#3ba","#b59","#fb0","#27c","#a53","#6c2","#d36","#c5b","#48a"];
+export function channelColor(rawAccount) {
+  const name = fmtAccount(rawAccount);
+  let h = 0;
+  for (let i = 0; i < name.length; i++) h = (h * 31 + name.charCodeAt(i)) & 0xffff;
+  return _CH_PALETTE[h % _CH_PALETTE.length];
 }
 
 export function el(tag, attrs = {}, ...children) {
