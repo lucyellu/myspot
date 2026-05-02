@@ -153,13 +153,16 @@ export function card(s) {
   durBadge.textContent = fmtDuration(s.duration);
   titleEl.textContent = s.title;
   const dot = article.querySelector(".card-dot");
-  dot.style.background = channelColor(s.account);
-  dot.title = fmtAccount(s.account);
+  if (dot) {
+    dot.style.background = channelColor(s.account);
+    dot.title = fmtAccount(s.account);
+  }
   const subParts = [];
   if (s.suno_play_count) subParts.push(`${s.suno_play_count.toLocaleString()} ♫`);
   if (s.suno_upvote_count) subParts.push(`${s.suno_upvote_count} ♥`);
   if (s.gens_count) subParts.push(`${s.gens_count} gens`);
-  subEl.textContent = subParts.join(" · ");
+  // append as text node to keep the dot span sibling intact
+  subEl.append(document.createTextNode(subParts.join(" · ")));
   if (s.liked) {
     const liked = article.querySelector(".card-liked");
     if (liked) liked.hidden = false;
