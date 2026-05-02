@@ -10,6 +10,7 @@ import imagehash
 from .config import SUNO_LIBRARY, ASSETS_DIR
 from .db import init_db, tx
 from .sunosync_cache import SunoSyncCache
+from .sunometa_db import SunoMetaDB
 from .lyrics import parse_lyrics_file
 from .derivatives import split_version, build_relationships
 
@@ -43,7 +44,7 @@ def _try_image_dims(img_path: Path) -> tuple[int | None, int | None]:
         return None, None
 
 
-def index_suno_library(conn, cache: SunoSyncCache, *, verbose: bool = True) -> dict:
+def index_suno_library(conn, cache: SunoSyncCache, meta_db: SunoMetaDB | None = None, *, verbose: bool = True) -> dict:
     """Walk SUNO_LIBRARY/<account>/*.mp3 and upsert into songs + lyric_lines.
 
     Existing rows are updated (not duplicated) by mp3_path uniqueness.
@@ -90,6 +91,15 @@ def index_suno_library(conn, cache: SunoSyncCache, *, verbose: bool = True) -> d
                 suno_date = cache_entry.get("date") or None
                 title = cache_entry.get("title") or stem
 
+                # Enrich with live Suno API metadata if available
+                meta_entry = (meta_db.lookup(suno_id) if meta_db and suno_id else None) or {}
+                suno_play_count   = meta_entry.get("play_count")
+                suno_upvote_count = meta_entry.get("upvote_count")
+                suno_is_liked     = meta_entry.get("is_liked")
+                suno_model        = meta_entry.get("model_name") or None
+                suno_style        = meta_entry.get("style") or None
+                suno_video_url    = meta_entry.get("video_url") or None
+
                 mp3_path_str = str(mp3_file).replace("\\", "/")
                 jpg_path_str = str(jpg).replace("\\", "/") if jpg.exists() else None
                 txt_path_str = str(txt).replace("\\", "/") if txt.exists() else None
@@ -100,6 +110,8 @@ def index_suno_library(conn, cache: SunoSyncCache, *, verbose: bool = True) -> d
                     suno_id, title, base_title, version, artist, account, genre,
                     bpm, prompt, duration, mp3_path_str, jpg_path_str, txt_path_str,
                     wav_path_str, mid_path_str, suno_date,
+                    suno_play_count, suno_upvote_count, suno_is_liked,
+                    suno_model, suno_style, suno_video_url,
                 )
 
                 if mp3_path_str in existing_paths:
@@ -109,7 +121,9 @@ def index_suno_library(conn, cache: SunoSyncCache, *, verbose: bool = True) -> d
                             suno_id=?, title=?, base_title=?, version=?, artist=?,
                             account=?, genre=?, bpm=?, prompt=?, duration=?,
                             mp3_path=?, jpg_path=?, txt_path=?, wav_path=?,
-                            mid_path=?, suno_date=?
+                            mid_path=?, suno_date=?,
+                            suno_play_count=?, suno_upvote_count=?, suno_is_liked=?,
+                            suno_model=?, suno_style=?, suno_video_url=?
                            WHERE id=?""",
                         fields + (song_id,),
                     )
@@ -120,8 +134,10 @@ def index_suno_library(conn, cache: SunoSyncCache, *, verbose: bool = True) -> d
                             suno_id, title, base_title, version, artist,
                             account, genre, bpm, prompt, duration,
                             mp3_path, jpg_path, txt_path, wav_path,
-                            mid_path, suno_date
-                           ) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)""",
+                            mid_path, suno_date,
+                            suno_play_count, suno_upvote_count, suno_is_liked,
+                            suno_model, suno_style, suno_video_url
+                           ) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)""",
                         fields,
                     )
                     song_id = cur.lastrowid
@@ -241,10 +257,13 @@ def full_reindex(verbose: bool = True) -> dict:
     conn = init_db()
     cache = SunoSyncCache()
     cache_loaded = cache.load()
+    meta_db = SunoMetaDB()
+    meta_loaded = meta_db.load()
     if verbose:
         print(f"[cache] loaded={cache_loaded} entries={cache.entry_count}")
+        print(f"[suno_meta] loaded={meta_loaded} entries={meta_db.entry_count}")
         print(f"[suno_library] scanning {SUNO_LIBRARY}...")
-    suno_stats = index_suno_library(conn, cache, verbose=verbose)
+    suno_stats = index_suno_library(conn, cache, meta_db, verbose=verbose)
     if verbose:
         print(f"[suno_library] {suno_stats}")
         print("[derivatives] rebuilding relationships...")

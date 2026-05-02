@@ -153,7 +153,8 @@ def list_songs(
     sql = f"""
         SELECT s.id, s.title, s.base_title, s.version, s.account, s.genre, s.bpm,
                s.duration, s.suno_date, s.jpg_path, s.suno_id IS NOT NULL AS has_cache,
-               s.liked,
+               s.liked, s.suno_play_count, s.suno_upvote_count, s.suno_is_liked,
+               s.suno_model, s.suno_style,
                (SELECT COUNT(*) FROM lyric_lines ll WHERE ll.song_id = s.id) AS lyric_count,
                (SELECT COUNT(*) FROM play_history ph WHERE ph.song_id = s.id) AS play_count,
                (SELECT MAX(played_at) FROM play_history ph WHERE ph.song_id = s.id) AS last_played_at,
@@ -243,6 +244,8 @@ def get_song(song_id: int):
         """SELECT s.id, s.suno_id, s.title, s.base_title, s.version, s.artist, s.account,
                   s.genre, s.bpm, s.prompt, s.duration, s.mp3_path, s.jpg_path, s.txt_path,
                   s.wav_path, s.mid_path, s.suno_date, s.indexed_at, s.liked,
+                  s.suno_play_count, s.suno_upvote_count, s.suno_is_liked,
+                  s.suno_model, s.suno_style, s.suno_video_url,
                   (SELECT COUNT(*) FROM play_history ph WHERE ph.song_id = s.id) AS play_count,
                   (SELECT MAX(played_at) FROM play_history ph WHERE ph.song_id = s.id) AS last_played_at
            FROM songs s WHERE s.id = ?""",
