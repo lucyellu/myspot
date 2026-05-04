@@ -147,6 +147,8 @@ export function card(s) {
     else img.addEventListener("load", markLowres, { once: true });
   } else {
     img.removeAttribute("src");
+    const c = channelColor(s.account);
+    thumb.style.background = `linear-gradient(150deg, ${c}3 0%, ${c}9 100%)`;
   }
   img.alt = s.title || "";
   if (s.version > 1) verBadge.textContent = `v${s.version}`; else verBadge.remove();

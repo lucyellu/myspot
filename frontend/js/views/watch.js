@@ -1,5 +1,5 @@
 import { api, mediaUrl } from "../api.js";
-import { fmtDuration, fmtAccount, el, clear, toast } from "../util.js";
+import { fmtDuration, fmtAccount, el, clear, toast, channelColor } from "../util.js";
 import { renderTab, currentTab, setSong } from "../sidepanel.js";
 import { attachHalftone } from "../components/halftone.js";
 import { applyDesignSettings } from "../tabs/design.js";
@@ -908,8 +908,6 @@ function paintVisual(visual, song) {
   }
 
   if (song.jpg_path) {
-    // Suno cover — typically only 40x40 in this library, so blur-backdrop +
-    // centered sharp + pixelated upscale once we confirm the natural size.
     visual.classList.add("with-art");
     const url = mediaUrl.cover(song.id);
     const bg = el("div", { class: "blur-bg" });
@@ -923,6 +921,9 @@ function paintVisual(visual, song) {
     }, { once: true });
     wrap.append(coverImg);
     visual.append(bg, wrap);
+  } else {
+    const c = channelColor(song.account);
+    visual.style.background = `linear-gradient(150deg, ${c}3 0%, ${c}9 100%)`;
   }
 }
 

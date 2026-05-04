@@ -171,7 +171,7 @@ def list_songs(
         "title":        f"s.base_title {D}, s.version {D}",
         "version":      f"s.version {D}, s.id {D}",
         "popular":      f"s.suno_play_count {D} NULLS LAST, s.id {D}",
-        "liked":        f"s.liked {D}, s.id {D}",
+        "liked":        f"s.suno_upvote_count {D} NULLS LAST, s.id {D}",
         "gens":         f"gens_count {D}, s.id {D}",
         "recent_played": f"last_played_at {D} NULLS LAST, s.id {D}",
     }[sort]
@@ -1239,7 +1239,9 @@ def media_cover(song_id: int):
         raise HTTPException(404, "cover not found")
     if not _under(row["jpg_path"], _MEDIA_ROOTS):
         raise HTTPException(403, "forbidden")
-    return FileResponse(row["jpg_path"])
+    resp = FileResponse(row["jpg_path"])
+    resp.headers["Cache-Control"] = "no-cache"
+    return resp
 
 
 @app.get("/media/asset/{asset_id}")
@@ -1286,6 +1288,148 @@ def reindex_endpoint():
 @app.get("/api/reindex/status")
 def reindex_status():
     return _reindex_state
+
+
+@app.post("/api/repair-art")
+def repair_art():
+    """Fix blurry album art in two passes:
+    1. For songs with suno_id: copy high-res local_art from suno_meta.db to jpg_path.
+    2. For versioned songs with no suno_id: copy base song's high-res art to their jpg_path.
+    Overwrites in-place — no reindex needed.
+    """
+    import sqlite3 as _sqlite3
+    import shutil
+    try:
+        from PIL import Image as _Image
+        def _dim(p):
+            try:
+                w, h = _Image.open(p).size
+                return min(w, h)
+            except Exception:
+                return 0
+    except ImportError:
+        def _dim(p):
+            return 9999  # can't check; assume ok
+
+    SUNO_META_DB = Path(r"C:\Users\lucyl\Desktop\suno_nightly\suno_meta.db")
+    MIN_GOOD = 512
+
+    copied_via_suno = 0
+    copied_via_base = 0
+    skipped = 0
+
+    # --- Pass 1: suno_id match ---
+    if SUNO_META_DB.exists():
+        sconn = _sqlite3.connect(str(SUNO_META_DB))
+        sconn.row_factory = _sqlite3.Row
+        # Build map: suno_id -> high-res local_art path
+        suno_art: dict[str, Path] = {}
+        for row in sconn.execute("SELECT id, local_art FROM songs WHERE local_art IS NOT NULL AND art_low_res=0").fetchall():
+            p = Path(row["local_art"])
+            if p.exists() and _dim(p) >= MIN_GOOD:
+                suno_art[row["id"]] = p
+        sconn.close()
+
+        blurry_with_id = _conn.execute(
+            "SELECT id, suno_id, jpg_path FROM songs WHERE suno_id IS NOT NULL AND jpg_path IS NOT NULL"
+        ).fetchall()
+        for row in blurry_with_id:
+            jp = Path(row["jpg_path"])
+            if not jp.exists():
+                continue
+            if _dim(jp) >= MIN_GOOD:
+                continue
+            src = suno_art.get(row["suno_id"])
+            if src and src != jp:
+                try:
+                    shutil.copy2(str(src), str(jp))
+                    copied_via_suno += 1
+                except Exception:
+                    skipped += 1
+            else:
+                skipped += 1
+
+    # --- Pass 2: base_title propagation for versioned songs with no suno_id ---
+    # Build map: base_title -> best high-res jpg_path among songs in myspot
+    base_art: dict[str, Path] = {}
+    for row in _conn.execute("SELECT base_title, jpg_path FROM songs WHERE jpg_path IS NOT NULL").fetchall():
+        p = Path(row["jpg_path"])
+        if not p.exists():
+            continue
+        d = _dim(p)
+        existing = base_art.get(row["base_title"])
+        if existing is None or d > _dim(existing):
+            if d >= MIN_GOOD:
+                base_art[row["base_title"]] = p
+
+    no_id_blurry = _conn.execute(
+        "SELECT id, base_title, jpg_path FROM songs WHERE suno_id IS NULL AND jpg_path IS NOT NULL"
+    ).fetchall()
+    for row in no_id_blurry:
+        jp = Path(row["jpg_path"])
+        if not jp.exists():
+            continue
+        if _dim(jp) >= MIN_GOOD:
+            continue
+        src = base_art.get(row["base_title"])
+        if src and src != jp:
+            try:
+                shutil.copy2(str(src), str(jp))
+                copied_via_base += 1
+            except Exception:
+                skipped += 1
+        else:
+            skipped += 1
+
+    return {
+        "ok": True,
+        "copied_via_suno_id": copied_via_suno,
+        "copied_via_base_title": copied_via_base,
+        "skipped": skipped,
+    }
+
+
+@app.post("/api/clear-blurry-art")
+def clear_blurry_art(threshold: int = Query(512)):
+    """Delete jpg files smaller than threshold px and null out jpg_path in the DB.
+    Frontend will show a gradient placeholder instead.
+    """
+    try:
+        from PIL import Image as _Image
+        def _dim(p):
+            try:
+                w, h = _Image.open(p).size
+                return min(w, h)
+            except Exception:
+                return 9999
+    except ImportError:
+        return {"ok": False, "error": "Pillow not installed"}
+
+    rows = _conn.execute(
+        "SELECT id, jpg_path FROM songs WHERE jpg_path IS NOT NULL"
+    ).fetchall()
+
+    deleted = 0
+    skipped = 0
+    for row in rows:
+        p = Path(row["jpg_path"])
+        if not p.exists():
+            continue
+        if _dim(p) >= threshold:
+            skipped += 1
+            continue
+        try:
+            p.unlink()
+        except Exception:
+            pass
+        with _db_lock:
+            _conn.execute("UPDATE songs SET jpg_path=NULL WHERE id=?", (row["id"],))
+        deleted += 1
+
+    with _db_lock:
+        _conn.commit()
+
+    return {"ok": True, "deleted": deleted, "skipped": skipped, "threshold_px": threshold}
 
 
 @app.get("/api/stats")
