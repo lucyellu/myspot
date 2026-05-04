@@ -1311,7 +1311,7 @@ def repair_art():
         def _dim(p):
             return 9999  # can't check; assume ok
 
-    SUNO_META_DB = Path(r"C:\Users\lucyl\Desktop\suno_nightly\suno_meta.db")
+    SUNO_META_DB = Path(r"C:\Users\lucyl\Desktop\suno-dl\suno_meta.db")
     MIN_GOOD = 512
 
     copied_via_suno = 0
