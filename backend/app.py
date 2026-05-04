@@ -290,7 +290,7 @@ def get_song(song_id: int):
 
     s["derivatives"] = _rows(
         _conn.execute(
-            """SELECT s2.id, s2.title, s2.version, r.kind, s2.jpg_path
+            """SELECT s2.id, s2.title, s2.version, r.kind, s2.jpg_path, s2.suno_id
                FROM relationships r JOIN songs s2 ON s2.id = r.child_id
                WHERE r.parent_id = ? ORDER BY s2.version""",
             (song_id,),
@@ -298,7 +298,7 @@ def get_song(song_id: int):
     )
     s["sources"] = _rows(
         _conn.execute(
-            """SELECT s2.id, s2.title, s2.version, r.kind, s2.jpg_path
+            """SELECT s2.id, s2.title, s2.version, r.kind, s2.jpg_path, s2.suno_id
                FROM relationships r JOIN songs s2 ON s2.id = r.parent_id
                WHERE r.child_id = ? ORDER BY s2.version""",
             (song_id,),

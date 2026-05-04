@@ -35,8 +35,18 @@ function derivRow(s, depth, seen) {
   wrap.style.marginLeft = depth * 16 + "px";
 
   const row = el("div", { class: "derivative-row" });
-  const img = el("img", { src: s.jpg_path ? mediaUrl.cover(s.id) : "", alt: "" });
+
+  const img = el("img", {
+    src: s.jpg_path ? mediaUrl.cover(s.id) : "",
+    alt: "",
+    title: "Play this song",
+  });
   if (!s.jpg_path) img.style.background = "var(--bg)";
+  img.style.cursor = "pointer";
+  img.addEventListener("click", (e) => {
+    e.stopPropagation();
+    location.hash = `#/song/${s.id}`;
+  });
   row.append(img);
 
   const info = el("div", { class: "deriv-info" });
@@ -44,8 +54,17 @@ function derivRow(s, depth, seen) {
   if (s.kind) info.append(el("div", { class: "kind" }, s.kind));
   row.append(info);
 
-  const nav = el("a", { class: "deriv-nav", href: `#/song/${s.id}`, title: "Open song" }, "↗");
-  row.append(nav);
+  if (s.suno_id) {
+    const sunoBtn = el("a", {
+      class: "deriv-suno-btn",
+      href: `https://suno.com/song/${s.suno_id}`,
+      target: "_blank",
+      rel: "noopener noreferrer",
+      title: "Open on Suno (new tab)",
+    }, "Suno");
+    sunoBtn.addEventListener("click", (e) => e.stopPropagation());
+    row.append(sunoBtn);
+  }
 
   if (seen.has(s.id)) {
     row.append(el("span", { class: "deriv-sublabel", style: "font-size:10px;opacity:0.5" }, "already shown"));
@@ -53,8 +72,8 @@ function derivRow(s, depth, seen) {
     return wrap;
   }
 
-  const toggle = el("button", { class: "deriv-toggle", type: "button" }, "▶");
-  row.insertBefore(toggle, nav);
+  const arrow = el("span", { class: "deriv-arrow" }, "▶");
+  row.append(arrow);
   wrap.append(row);
 
   const children = el("div", { class: "deriv-children" });
@@ -62,10 +81,10 @@ function derivRow(s, depth, seen) {
   let loaded = false;
   wrap.append(children);
 
-  toggle.onclick = async () => {
+  row.addEventListener("click", async () => {
     const open = children.hidden;
     children.hidden = !open;
-    toggle.textContent = open ? "▼" : "▶";
+    arrow.textContent = open ? "▼" : "▶";
     if (open && !loaded) {
       loaded = true;
       children.textContent = "Loading…";
@@ -91,7 +110,7 @@ function derivRow(s, depth, seen) {
         children.textContent = "Failed to load.";
       }
     }
-  };
+  });
 
   return wrap;
 }

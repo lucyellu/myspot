@@ -1787,17 +1787,19 @@ html[data-theme="dark"] {
 
 .deriv-wrap { margin-bottom: 6px; }
 .deriv-info { flex: 1; min-width: 0; }
-.deriv-toggle {
-  background: none; border: 1px solid var(--ink-mute); border-radius: 4px;
-  color: var(--ink); font-size: 10px; cursor: pointer; padding: 2px 6px;
-  align-self: center; line-height: 1; flex-shrink: 0;
+.derivative-row img:hover { opacity: 0.85; }
+.deriv-arrow {
+  font-size: 10px; color: var(--ink-mute); line-height: 1;
+  align-self: center; flex-shrink: 0; padding: 2px 4px;
+  user-select: none;
 }
-.deriv-toggle:hover { background: var(--bg-2); }
-.deriv-nav {
-  font-size: 14px; color: var(--ink-mute); text-decoration: none;
-  padding: 2px 4px; border-radius: 4px; align-self: center; flex-shrink: 0;
+.deriv-suno-btn {
+  font-family: var(--font-display); font-size: 10px; letter-spacing: 0.12em;
+  color: var(--ink-mute); text-decoration: none;
+  padding: 2px 8px; border: 1px solid var(--ink-mute); border-radius: 4px;
+  align-self: center; flex-shrink: 0; line-height: 1.4;
 }
-.deriv-nav:hover { color: var(--ink); }
+.deriv-suno-btn:hover { color: var(--ink); border-color: var(--ink); background: var(--bg-2); }
 .deriv-children { border-left: 2px solid var(--bg-2); margin-left: 28px; padding-left: 10px; padding-top: 4px; }
 .deriv-sublabel {
   font-family: var(--font-display); font-size: 10px; letter-spacing: 0.18em;
