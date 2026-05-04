@@ -4,6 +4,19 @@ import { api, mediaUrl } from "../api.js";
 export function renderSources(body, song) {
   clear(body);
 
+  if (song.suno_id) {
+    const header = el("div", { class: "sources-current-song" });
+    header.append(el("span", { class: "deriv-sublabel" }, "THIS SONG"));
+    header.append(el("a", {
+      class: "deriv-suno-btn",
+      href: `https://suno.com/song/${song.suno_id}`,
+      target: "_blank",
+      rel: "noopener noreferrer",
+      title: "Open on Suno (new tab)",
+    }, "Suno"));
+    body.append(header);
+  }
+
   const hasSources = song.sources && song.sources.length;
   const hasDerivs = song.derivatives && song.derivatives.length;
 

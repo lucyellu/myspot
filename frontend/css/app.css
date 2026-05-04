@@ -1800,6 +1800,12 @@ html[data-theme="dark"] {
   align-self: center; flex-shrink: 0; line-height: 1.4;
 }
 .deriv-suno-btn:hover { color: var(--ink); border-color: var(--ink); background: var(--bg-2); }
+.sources-current-song {
+  display: flex; align-items: center; gap: 10px;
+  padding: 6px 0 10px; margin-bottom: 8px;
+  border-bottom: 1px solid var(--bg-2);
+}
+.sources-current-song .deriv-sublabel { margin: 0; }
 .deriv-children { border-left: 2px solid var(--bg-2); margin-left: 28px; padding-left: 10px; padding-top: 4px; }
 .deriv-sublabel {
   font-family: var(--font-display); font-size: 10px; letter-spacing: 0.18em;
