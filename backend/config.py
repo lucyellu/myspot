@@ -2,8 +2,8 @@ from pathlib import Path
 import os
 
 ROOT = Path(__file__).resolve().parent.parent
-SUNO_LIBRARY = Path(r"C:/Users/lucyl/Desktop/suno_library")
-SUNOSYNC_CACHE = Path(r"C:/Users/lucyl/Desktop/hold/sunosync/SunoSync/library_cache.json")
+ENV_FILE = ROOT / ".env"
+
 ASSETS_DIR = ROOT / "assets"
 DATA_DIR = ROOT / "data"
 GENS_DIR = DATA_DIR / "gens"
@@ -11,7 +11,6 @@ EXPORTS_DIR = DATA_DIR / "exports"
 SECRETS_DIR = ROOT / "secrets"
 DB_PATH = DATA_DIR / "myspot.db"
 FRONTEND_DIR = ROOT / "frontend"
-ENV_FILE = ROOT / ".env"
 
 HOST = "127.0.0.1"
 PORT = 7777
@@ -58,9 +57,25 @@ _ENV_CACHE = _parse_env_file(ENV_FILE)
 def reload_env() -> dict[str, str]:
     """Re-read .env from disk (used by /api/health when the user has just
     edited it without restarting the server)."""
-    global _ENV_CACHE
+    global _ENV_CACHE, SUNO_LIBRARY, SUNO_META_DB
     _ENV_CACHE = _parse_env_file(ENV_FILE)
+    SUNO_LIBRARY = _path_env("SUNO_LIBRARY", _SUNO_LIBRARY_DEFAULT)
+    SUNO_META_DB = _path_env("SUNO_META_DB", _SUNO_META_DB_DEFAULT)
     return _ENV_CACHE
+
+
+def _path_env(name: str, default: str) -> Path:
+    """Resolve a path-valued config: process env > .env file > default."""
+    v = os.environ.get(name) or _ENV_CACHE.get(name)
+    return Path(v.strip()) if v and v.strip() else Path(default)
+
+
+_SUNO_LIBRARY_DEFAULT = r"C:/Users/lucyl/Desktop/suno_library"
+_SUNO_META_DB_DEFAULT = r"C:/Users/lucyl/Desktop/suno-dl/suno_meta.db"
+
+SUNO_LIBRARY  = _path_env("SUNO_LIBRARY",  _SUNO_LIBRARY_DEFAULT)
+SUNO_META_DB  = _path_env("SUNO_META_DB",  _SUNO_META_DB_DEFAULT)
+SUNOSYNC_CACHE = Path(r"C:/Users/lucyl/Desktop/hold/sunosync/SunoSync/library_cache.json")
 
 
 def read_secret(name: str) -> str | None:

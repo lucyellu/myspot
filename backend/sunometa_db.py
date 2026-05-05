@@ -1,7 +1,7 @@
 import sqlite3
 from pathlib import Path
 
-SUNO_META_DB = Path(r"C:\Users\lucyl\Desktop\suno-dl\suno_meta.db")
+from .config import SUNO_META_DB
 
 
 class SunoMetaDB:
