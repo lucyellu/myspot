@@ -14,6 +14,13 @@ $tunnelOut = Join-Path $logDir "cloudflared.out.log"
 $tunnelErr = Join-Path $logDir "cloudflared.err.log"
 Remove-Item -LiteralPath $tunnelOut, $tunnelErr -Force -ErrorAction SilentlyContinue
 
+$staleTunnels = Get-CimInstance Win32_Process -Filter "name = 'cloudflared.exe'" -ErrorAction SilentlyContinue |
+  Where-Object { $_.CommandLine -like "*tunnel*--url*127.0.0.1:7777*" -or $_.CommandLine -like "*tunnel*--url*http://127.0.0.1:7777*" }
+foreach ($proc in $staleTunnels) {
+  Write-Host "Stopping stale myspot Cloudflare tunnel process $($proc.ProcessId)..."
+  Stop-Process -Id $proc.ProcessId -Force -ErrorAction SilentlyContinue
+}
+
 Write-Host ""
 Write-Host "========================================="
 Write-Host " myspot public"
@@ -34,10 +41,17 @@ try {
   throw
 }
 
-$backend = Start-Process -FilePath $python `
-  -ArgumentList @("-m", "backend.app") `
-  -WorkingDirectory $root `
-  -PassThru
+$backend = $null
+$existingBackend = Get-NetTCPConnection -LocalPort 7777 -State Listen -ErrorAction SilentlyContinue | Select-Object -First 1
+if ($existingBackend) {
+  Write-Host "Using existing local backend process $($existingBackend.OwningProcess) on port 7777."
+} else {
+  $backend = Start-Process -FilePath $python `
+    -ArgumentList @("-m", "backend.app") `
+    -WorkingDirectory $root `
+    -PassThru
+  Write-Host "Started local backend process $($backend.Id)."
+}
 
 try {
   Write-Host "Waiting for Cloudflare tunnel URL..."
@@ -53,11 +67,30 @@ try {
   }
 
   if ($publicUrl) {
-    $api = [uri]::EscapeDataString($publicUrl)
-    $target = "$($SiteUrl.TrimEnd('/'))/?api=$api$Route"
     Write-Host "Public API: $publicUrl"
-    Write-Host "Opening: $target"
-    Start-Process $target
+    Write-Host "Waiting for tunnel health..."
+    $healthy = $false
+    $healthDeadline = (Get-Date).AddSeconds(60)
+    while ((Get-Date) -lt $healthDeadline -and -not $healthy) {
+      Start-Sleep -Seconds 2
+      try {
+        $resp = Invoke-WebRequest -Uri "$publicUrl/api/health" -UseBasicParsing -TimeoutSec 8
+        $healthy = $resp.StatusCode -ge 200 -and $resp.StatusCode -lt 500
+      } catch {
+        $healthy = $false
+      }
+    }
+
+    if ($healthy) {
+      $api = [uri]::EscapeDataString($publicUrl)
+      $target = "$($SiteUrl.TrimEnd('/'))/?api=$api$Route"
+      Write-Host "Opening: $target"
+      Start-Process $target
+    } else {
+      Write-Host "Tunnel URL was created but /api/health did not become reachable yet."
+      Write-Host "Try again, or paste this URL into Netlify's backend gear once it resolves:"
+      Write-Host "  $publicUrl"
+    }
   } else {
     Write-Host "Tunnel URL was not detected yet."
     Write-Host "Open $SiteUrl and paste the trycloudflare URL from:"
@@ -66,7 +99,11 @@ try {
 
   Write-Host ""
   Write-Host "Public mode is running. Close this window to stop backend and tunnel."
-  Wait-Process -Id $backend.Id
+  if ($backend) {
+    Wait-Process -Id $backend.Id
+  } else {
+    Wait-Process -Id $tunnel.Id
+  }
 } finally {
   if ($backend -and -not $backend.HasExited) { Stop-Process -Id $backend.Id -Force -ErrorAction SilentlyContinue }
   if ($tunnel -and -not $tunnel.HasExited) { Stop-Process -Id $tunnel.Id -Force -ErrorAction SilentlyContinue }
