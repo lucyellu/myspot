@@ -29,6 +29,12 @@ CREATE TABLE IF NOT EXISTS songs (
     wav_path TEXT,
     mid_path TEXT,
     suno_date TEXT,
+    suno_play_count INTEGER,
+    suno_upvote_count INTEGER,
+    suno_is_liked INTEGER,
+    suno_model TEXT,
+    suno_style TEXT,
+    suno_video_url TEXT,
     mfcc TEXT,
     liked INTEGER NOT NULL DEFAULT 0,
     indexed_at TEXT NOT NULL DEFAULT (datetime('now'))

@@ -1,4 +1,5 @@
 import { el, clear } from "../util.js";
+import { getAudio } from "../player.js";
 
 export function renderLyrics(body, song) {
   clear(body);
@@ -21,22 +22,20 @@ export function renderLyrics(body, song) {
   });
   body.append(wrap);
 
-  // Estimate progress-based highlight
-  const handler = (e) => {
-    const { t, total } = e.detail;
+  const paintProgress = (t, total) => {
     if (!total || !lineEls.length) return;
     const ratio = Math.max(0, Math.min(1, t / total));
-    const idx = Math.floor(ratio * lineEls.length);
+    const idx = Math.min(lineEls.length - 1, Math.floor(ratio * lineEls.length));
     lineEls.forEach((l, i) => {
+      l.classList.toggle("active", i === idx);
+      l.classList.toggle("past", i < idx);
+      l.classList.toggle("future", i > idx);
       if (i === idx) {
-        l.style.color = "var(--text)";
-        l.style.background = "rgba(255,85,119,0.08)";
+        l.setAttribute("aria-current", "true");
       } else if (i < idx) {
-        l.style.color = "var(--text-muted)";
-        l.style.background = "transparent";
+        l.removeAttribute("aria-current");
       } else {
-        l.style.color = "var(--text-dim)";
-        l.style.background = "transparent";
+        l.removeAttribute("aria-current");
       }
     });
     if (idx >= 0 && lineEls[idx]) {
@@ -50,7 +49,24 @@ export function renderLyrics(body, song) {
     }
   };
 
+  // Estimate progress-based highlight. Listen to the app-level tick, and also
+  // sample the persistent audio element so the lyrics tab still updates if it
+  // is opened mid-song or a browser misses an event.
+  const handler = (e) => {
+    const { t, total } = e.detail;
+    paintProgress(t, total);
+  };
+
   const ac = new AbortController();
   document.addEventListener("audio:tick", handler, { signal: ac.signal });
-  body._cleanup = () => ac.abort();
+  const tick = () => {
+    const audio = getAudio();
+    paintProgress(audio.currentTime || 0, audio.duration || song.duration || 0);
+  };
+  tick();
+  const interval = setInterval(tick, 300);
+  body._cleanup = () => {
+    clearInterval(interval);
+    ac.abort();
+  };
 }
