@@ -1,5 +1,7 @@
 # myspot
 
+**[Try it live →](https://myspot-web.netlify.app/)**
+
 Personal YouTube-style player for your Suno music library, with a six-tab AI sidepanel, **free unlimited image generation via Pollinations FLUX**, prompt enhancement (DeepSeek / Gemini / Claude), free image-to-prompt vision (Gemini), live drag-drop visual track that plays in sequence with the song, image-to-video animation (HF LTX-Video automated + Kling manual), and one-click music-video MP4 export.
 
 > **For developers picking up the project:** read [STATE.md](./STATE.md) for current architecture + endpoints, [PLAN.md](./PLAN.md) for the roadmap, [MODELS.md](./MODELS.md) for the full AI service landscape, [DESIGN-BRIEF.md](./DESIGN-BRIEF.md) for the in-flight frontend redesign, [CONCERT.md](./CONCERT.md) for the multiplayer concert vision.
