@@ -15,7 +15,7 @@ echo.
 REM Open the browser shortly after uvicorn starts
 start "" /b cmd /c "timeout /t 3 /nobreak >nul && start "" http://127.0.0.1:7777/"
 
-python -m backend.app
+py -3.11 -m backend.app
 if errorlevel 1 (
   echo.
   echo  Server exited with an error. Press any key to close...

@@ -18,7 +18,7 @@ start "myspot cloudflared" cloudflared tunnel --url http://127.0.0.1:7777
 REM Open local browser after backend starts
 start "" /b cmd /c "timeout /t 4 /nobreak >nul && start "" http://127.0.0.1:7777/"
 
-python -m backend.app
+py -3.11 -m backend.app
 if errorlevel 1 (
   echo.
   echo  Server exited with an error. Press any key to close...
