@@ -1,12 +1,14 @@
 import { api, mediaUrl } from "../api.js";
 import { fmtDuration, fmtAccount, el, clear, toast, channelColor } from "../util.js";
-import { renderTab, currentTab, setSong } from "../sidepanel.js";
+import { renderTab, currentTab, setSong } from "../sidepanel.js?v=dj1";
 import { attachHalftone } from "../components/halftone.js";
 import { applyDesignSettings } from "../tabs/design.js";
+import { loadPlayerSong, setPlayerContext, queueAutoplayForRoute, getAudio } from "../player.js";
 
 let currentAudio = null;
 let _related = [];
 let _keyAbort = null;
+let _watchAudioAbort = null;
 let _track = [];          // ordered list of completed gens for the song
 let _activeClipIdx = -1;
 let _currentSong = null;
@@ -15,6 +17,12 @@ let _traySelected = new Set();  // tray ids picked via multi-select
 let _trackSelected = new Set();  // track-clip gen ids picked for batch delete
 
 const SLIDESHOW_KEY = "myspot.slideshow.v1";  // { [songId]: bool }
+const WATCH_LAYOUT_KEY = "myspot.watch.layout.v1";
+const WATCH_DEFAULTS = {
+  order: ["stage", "media", "studio"],
+  widths: { stage: 560, media: 360, studio: 420 },
+  collapsed: {},
+};
 function loadSlideshowMode(songId) {
   try { return !!(JSON.parse(localStorage.getItem(SLIDESHOW_KEY) || "{}")[songId]); }
   catch { return false; }
@@ -27,11 +35,159 @@ function saveSlideshowMode(songId, on) {
   } catch { /* ignore */ }
 }
 
+function loadWatchLayout() {
+  try {
+    const saved = JSON.parse(localStorage.getItem(WATCH_LAYOUT_KEY) || "{}");
+    const order = Array.isArray(saved.order) ? saved.order.filter((x) => WATCH_DEFAULTS.order.includes(x)) : [];
+    for (const key of WATCH_DEFAULTS.order) if (!order.includes(key)) order.push(key);
+    return {
+      order,
+      widths: { ...WATCH_DEFAULTS.widths, ...(saved.widths || {}) },
+      collapsed: { ...(saved.collapsed || {}) },
+    };
+  } catch {
+    return { ...WATCH_DEFAULTS, widths: { ...WATCH_DEFAULTS.widths }, collapsed: {} };
+  }
+}
+
+function saveWatchLayout(layout) {
+  try { localStorage.setItem(WATCH_LAYOUT_KEY, JSON.stringify(layout)); } catch { /* ignore */ }
+}
+
+function bindWatchLayout() {
+  const watch = document.getElementById("watch-lanes");
+  if (!watch) return;
+  let layout = loadWatchLayout();
+
+  const lanes = new Map([...watch.querySelectorAll(".watch-lane")].map((lane) => [lane.dataset.lane, lane]));
+  const makeResizer = (before, after) => {
+    const r = el("div", {
+      class: "lane-resizer",
+      "data-resize-before": before,
+      "data-resize-after": after,
+      title: "Resize lanes",
+    });
+    return r;
+  };
+
+  const rebuild = () => {
+    const order = layout.order.filter((key) => lanes.has(key));
+    watch.innerHTML = "";
+    order.forEach((key, idx) => {
+      const lane = lanes.get(key);
+      watch.append(lane);
+      if (idx < order.length - 1) watch.append(makeResizer(key, order[idx + 1]));
+    });
+    applyLayout();
+    bindLaneControls();
+    bindResizers();
+  };
+
+  const colFor = (key) => layout.collapsed[key] ? "44px" : `${Math.max(220, Number(layout.widths[key]) || WATCH_DEFAULTS.widths[key])}px`;
+  const applyLayout = () => {
+    for (const [key, lane] of lanes) {
+      const collapsed = !!layout.collapsed[key];
+      lane.classList.toggle("collapsed", collapsed);
+      const btn = lane.querySelector(".lane-collapse");
+      if (btn) btn.textContent = collapsed ? "+" : "−";
+    }
+    if (window.matchMedia("(max-width: 800px)").matches) {
+      watch.style.gridTemplateColumns = "";
+      return;
+    }
+    watch.style.gridTemplateColumns = layout.order.map(colFor).join(" 10px ");
+  };
+
+  const bindLaneControls = () => {
+    for (const [key, lane] of lanes) {
+      const btn = lane.querySelector(".lane-collapse");
+      if (btn) {
+        btn.onclick = (e) => {
+          e.stopPropagation();
+          layout.collapsed[key] = !layout.collapsed[key];
+          saveWatchLayout(layout);
+          applyLayout();
+        };
+      }
+      const head = lane.querySelector(".lane-head");
+      if (head) {
+        head.ondblclick = () => {
+          layout.collapsed[key] = !layout.collapsed[key];
+          saveWatchLayout(layout);
+          applyLayout();
+        };
+      }
+      lane.ondragstart = (e) => {
+        if (!e.target.closest(".lane-head")) { e.preventDefault(); return; }
+        lane.classList.add("dragging");
+        e.dataTransfer.setData("text/plain", key);
+        e.dataTransfer.effectAllowed = "move";
+      };
+      lane.ondragend = () => lane.classList.remove("dragging");
+      lane.ondragover = (e) => {
+        const from = e.dataTransfer.getData("text/plain");
+        if (!from || from === key) return;
+        e.preventDefault();
+        lane.classList.add("drop-target");
+      };
+      lane.ondragleave = () => lane.classList.remove("drop-target");
+      lane.ondrop = (e) => {
+        e.preventDefault();
+        lane.classList.remove("drop-target");
+        const from = e.dataTransfer.getData("text/plain");
+        if (!from || from === key) return;
+        const order = layout.order.filter((x) => x !== from);
+        const at = order.indexOf(key);
+        order.splice(at, 0, from);
+        layout.order = order;
+        saveWatchLayout(layout);
+        rebuild();
+      };
+    }
+  };
+
+  const bindResizers = () => {
+    watch.querySelectorAll(".lane-resizer").forEach((resizer) => {
+      resizer.onpointerdown = (e) => {
+        e.preventDefault();
+        const before = resizer.dataset.resizeBefore;
+        const after = resizer.dataset.resizeAfter;
+        if (!before || !after || layout.collapsed[before] || layout.collapsed[after]) return;
+        const startX = e.clientX;
+        const startBefore = lanes.get(before).getBoundingClientRect().width;
+        const startAfter = lanes.get(after).getBoundingClientRect().width;
+        resizer.setPointerCapture(e.pointerId);
+        resizer.classList.add("resizing");
+        const move = (ev) => {
+          const dx = ev.clientX - startX;
+          layout.widths[before] = Math.max(220, startBefore + dx);
+          layout.widths[after] = Math.max(220, startAfter - dx);
+          applyLayout();
+        };
+        const up = () => {
+          resizer.classList.remove("resizing");
+          saveWatchLayout(layout);
+          resizer.removeEventListener("pointermove", move);
+          resizer.removeEventListener("pointerup", up);
+          resizer.removeEventListener("pointercancel", up);
+        };
+        resizer.addEventListener("pointermove", move);
+        resizer.addEventListener("pointerup", up);
+        resizer.addEventListener("pointercancel", up);
+      };
+    });
+  };
+
+  rebuild();
+  window.addEventListener("resize", applyLayout, { once: true });
+}
+
 export async function renderWatch(songId) {
   const view = document.getElementById("view");
   clear(view);
   const tpl = document.getElementById("tpl-watch").content.cloneNode(true);
   view.append(tpl);
+  bindWatchLayout();
   // Snap to top so the player is in view immediately, regardless of where
   // the user was scrolled in the previous (home / search / channel) page.
   window.scrollTo({ top: 0, behavior: "instant" });
@@ -49,9 +205,10 @@ export async function renderWatch(songId) {
   renderTrackStrip(song);
   bindCanvasDrops(song);
   initMediaTray(song);
-  const audio = document.getElementById("audio");
-  audio.src = mediaUrl.audio(song.id);
-  audio.crossOrigin = "anonymous"; // needed for Web Audio analyser
+  if (_watchAudioAbort) _watchAudioAbort.abort();
+  _watchAudioAbort = new AbortController();
+  const audioSignal = _watchAudioAbort.signal;
+  const audio = loadPlayerSong(song);
   currentAudio = audio;
 
   // Wire halftone visualizer to the audio element (idempotent across songs)
@@ -65,12 +222,12 @@ export async function renderWatch(songId) {
     if (lcdCur) lcdCur.textContent = fmtDuration(audio.currentTime);
     if (lcdTot) lcdTot.textContent = fmtDuration(audio.duration || song.duration);
   };
-  audio.addEventListener("loadedmetadata", updateLcd);
-  audio.addEventListener("timeupdate", updateLcd);
+  audio.addEventListener("loadedmetadata", updateLcd, { signal: audioSignal });
+  audio.addEventListener("timeupdate", updateLcd, { signal: audioSignal });
   updateLcd();
 
-  bindTransport(audio, song);
-  bindKaraoke(audio, song);
+  bindTransport(audio, song, audioSignal);
+  bindKaraoke(audio, song, audioSignal);
   const lcdBpm = document.getElementById("lcd-bpm");
   if (lcdBpm && song.bpm) { lcdBpm.textContent = song.bpm + " BPM"; lcdBpm.hidden = false; }
   const lcdVer = document.getElementById("lcd-version");
@@ -125,7 +282,7 @@ export async function renderWatch(songId) {
       api.recordPlay(song.id, Math.floor(audio.currentTime * 1000)).catch(() => {});
     }
   };
-  audio.addEventListener("timeupdate", checkPlay);
+  audio.addEventListener("timeupdate", checkPlay, { signal: audioSignal });
   // Also tell the extension which song is open
   api.setExtensionCurrentSong(song.id).catch(() => {});
 
@@ -133,18 +290,13 @@ export async function renderWatch(songId) {
   const upNext = document.getElementById("up-next");
   clear(upNext);
   _related = await api.related(song.id, 24);
+  setPlayerContext({ related: _related, sources: song.sources || [] });
   for (const r of _related) upNext.append(upRow(r));
 
   // Sidepanel
   setSong(song);
   bindTabs();
   renderTab(currentTab());
-
-  // Auto-play next sibling/derivative when current ends
-  audio.addEventListener("ended", () => {
-    const next = _related[0];
-    if (next) location.hash = `#/song/${next.id}`;
-  });
 
   bindShortcuts(song);
 
@@ -164,7 +316,7 @@ export async function renderWatch(songId) {
         highlightActiveClip();
       }
     }
-  });
+  }, { signal: audioSignal });
 }
 
 function stageUrl(src, kind) {
@@ -437,7 +589,11 @@ function bindCanvasDrops(song) {
 
 // ============ Media tray ============
 
-let _trayFolder = "_gens";
+let _trayFolder = "_root";
+let _mediaRoots = {
+  assets_dir: "L:/Media/Audio/suno/albumart",
+  gens_dir: "C:/Users/lucyl/Desktop/hold/projects/myspot/data/gens",
+};
 let _trayOffset = 0;
 let _trayTotal = 0;
 const _PAGE = 60;
@@ -445,13 +601,21 @@ const _PAGE = 60;
 async function initMediaTray(song) {
   const select = document.getElementById("media-tray-folder");
   if (!select) return;
+  try { _mediaRoots = await api.mediaRoots(); } catch { /* keep fallbacks */ }
   // Build folder dropdown
-  let folders = [{ folder: "_gens", n: 0, label: "Gens (output)" }];
+  let folders = [
+    { folder: "_root", n: 0, label: "Album art root" },
+    { folder: "_gens", n: 0, label: "Gens (output)" },
+  ];
   try {
     const list = await api.assetFolders();
     for (const f of list) {
-      if (f.folder === "_gens") {
+      if (f.folder === "_root") {
         folders[0].n = f.n;
+        continue;
+      }
+      if (f.folder === "_gens") {
+        folders[1].n = f.n;
         continue;
       }
       folders.push({ folder: f.folder, n: f.n, label: f.folder });
@@ -462,6 +626,11 @@ async function initMediaTray(song) {
   for (const f of folders) {
     const o = el("option", { value: f.folder }, `${f.label || f.folder} (${f.n})`);
     select.append(o);
+  }
+  if (!folders.some((f) => f.folder === _trayFolder)) {
+    const root = folders.find((f) => f.folder === "_root" && f.n > 0);
+    const firstReal = folders.find((f) => f.folder !== "_gens" && f.n > 0);
+    _trayFolder = (root || firstReal || folders[0]).folder;
   }
   select.value = _trayFolder;
   select.onchange = () => loadTray(select.value);
@@ -523,7 +692,7 @@ async function loadTray(folder) {
   let items = [];
   try {
     if (folder === "_gens") {
-      path = "C:\\Users\\lucyl\\Desktop\\myspot\\data\\gens\\";
+      path = _mediaRoots.gens_dir || "data/gens";
       const r = await api.gensBrowse({ limit: _PAGE, offset: 0 });
       items = (r.items || []).map((g) => ({
         uid: `gen:${g.id}`, _gen: g,
@@ -532,7 +701,8 @@ async function loadTray(folder) {
       }));
       _trayTotal = r.total;
     } else {
-      path = `C:\\Users\\lucyl\\Desktop\\myspot\\assets\\${folder}\\`;
+      const root = _mediaRoots.assets_dir || "assets";
+      path = folder === "_root" ? root : `${root}/${folder}`;
       const r = await api.assets({ folder, limit: _PAGE, offset: 0 });
       items = (r.items || []).map((a) => ({
         uid: `asset:${a.id}`, _asset: a,
@@ -717,7 +887,7 @@ function bindShortcuts(song) {
   if (_keyAbort) _keyAbort.abort();
   _keyAbort = new AbortController();
   const audio = currentAudio;
-  const TAB_NAMES = ["generate", "lyrics", "design", "sources", "prompts", "batch"];
+  const TAB_NAMES = ["dj", "generate", "lyrics", "design", "sources", "prompts", "batch"];
 
   function focusedOnInput() {
     const t = document.activeElement;
@@ -740,13 +910,13 @@ function bindShortcuts(song) {
     } else if (k === "n") {
       e.preventDefault();
       const nx = _related[0];
-      if (nx) location.hash = `#/song/${nx.id}`; else toast("No next song.");
+      if (nx) { queueAutoplayForRoute(); location.hash = `#/song/${nx.id}`; } else toast("No next song.");
     } else if (k === "p") {
       e.preventDefault();
       const sources = song.sources || [];
-      if (sources.length) location.hash = `#/song/${sources[0].id}`;
+      if (sources.length) { queueAutoplayForRoute(); location.hash = `#/song/${sources[0].id}`; }
       else toast("No source/parent.");
-    } else if (k >= "1" && k <= "6") {
+    } else if (k >= "1" && k <= "7") {
       e.preventDefault();
       const idx = parseInt(k, 10) - 1;
       const tabName = TAB_NAMES[idx];
@@ -759,7 +929,7 @@ function bindShortcuts(song) {
   }, { signal: _keyAbort.signal });
 }
 
-function bindTransport(audio, song) {
+function bindTransport(audio, song, signal) {
   const playBtn = document.getElementById("tp-play");
   const prevBtn = document.getElementById("tp-prev");
   const nextBtn = document.getElementById("tp-next");
@@ -775,8 +945,8 @@ function bindTransport(audio, song) {
     if (status) status.textContent = playing ? "▶" : "❚❚";
   };
   playBtn.onclick = () => { audio.paused ? audio.play() : audio.pause(); };
-  audio.addEventListener("play", refreshPlay);
-  audio.addEventListener("pause", refreshPlay);
+  audio.addEventListener("play", refreshPlay, { signal });
+  audio.addEventListener("pause", refreshPlay, { signal });
   refreshPlay();
 
   // Scrub bar — uses 0..1000 to keep granularity without bothering with float steps
@@ -787,8 +957,8 @@ function bindTransport(audio, song) {
     if (!total) return;
     scrub.value = String(Math.round((audio.currentTime / total) * 1000));
   };
-  audio.addEventListener("timeupdate", scrubFromAudio);
-  audio.addEventListener("loadedmetadata", scrubFromAudio);
+  audio.addEventListener("timeupdate", scrubFromAudio, { signal });
+  audio.addEventListener("loadedmetadata", scrubFromAudio, { signal });
   scrub.addEventListener("input", () => {
     scrubbing = true;
     const total = audio.duration || song.duration || 0;
@@ -803,18 +973,18 @@ function bindTransport(audio, song) {
 
   prevBtn.onclick = () => {
     const sources = song.sources || [];
-    if (sources.length) location.hash = `#/song/${sources[0].id}`;
+    if (sources.length) { queueAutoplayForRoute(); location.hash = `#/song/${sources[0].id}`; }
     else toast("No source/parent.");
   };
   nextBtn.onclick = () => {
     const next = _related[0];
-    if (next) location.hash = `#/song/${next.id}`;
+    if (next) { queueAutoplayForRoute(); location.hash = `#/song/${next.id}`; }
     else toast("No next song.");
   };
 }
 
 let _karaokeOn = true;
-function bindKaraoke(audio, song) {
+function bindKaraoke(audio, song, signal) {
   const overlay = document.getElementById("lyric-overlay");
   const toggle = document.getElementById("tp-karaoke");
   if (!overlay || !toggle) return;
@@ -873,7 +1043,7 @@ function bindKaraoke(audio, song) {
     }
     overlay.style.setProperty("--fill-progress", lineProgress.toFixed(3));
   };
-  document.addEventListener("audio:tick", handler);
+  document.addEventListener("audio:tick", handler, { signal });
 }
 
 function escapeHtml(s) {
@@ -927,4 +1097,4 @@ function paintVisual(visual, song) {
   }
 }
 
-export function getCurrentAudio() { return currentAudio; }
+export function getCurrentAudio() { return currentAudio || getAudio(); }

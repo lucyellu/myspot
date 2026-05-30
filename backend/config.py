@@ -4,7 +4,6 @@ import os
 ROOT = Path(__file__).resolve().parent.parent
 ENV_FILE = ROOT / ".env"
 
-ASSETS_DIR = ROOT / "assets"
 DATA_DIR = ROOT / "data"
 GENS_DIR = DATA_DIR / "gens"
 EXPORTS_DIR = DATA_DIR / "exports"
@@ -12,8 +11,8 @@ SECRETS_DIR = ROOT / "secrets"
 DB_PATH = DATA_DIR / "myspot.db"
 FRONTEND_DIR = ROOT / "frontend"
 
-HOST = "127.0.0.1"
-PORT = 7777
+_HOST_DEFAULT = "127.0.0.1"
+_PORT_DEFAULT = 7777
 
 
 def _parse_env_file(path: Path) -> dict[str, str]:
@@ -54,13 +53,35 @@ def _parse_env_file(path: Path) -> dict[str, str]:
 _ENV_CACHE = _parse_env_file(ENV_FILE)
 
 
+def _str_env(name: str, default: str) -> str:
+    v = os.environ.get(name) or _ENV_CACHE.get(name)
+    return v.strip() if v and v.strip() else default
+
+
+def _int_env(name: str, default: int) -> int:
+    v = os.environ.get(name) or _ENV_CACHE.get(name)
+    if not v or not v.strip():
+        return default
+    try:
+        return int(v.strip())
+    except ValueError:
+        return default
+
+
+HOST = _str_env("MYSPOT_HOST", _HOST_DEFAULT)
+PORT = _int_env("MYSPOT_PORT", _PORT_DEFAULT)
+
+
 def reload_env() -> dict[str, str]:
     """Re-read .env from disk (used by /api/health when the user has just
     edited it without restarting the server)."""
-    global _ENV_CACHE, SUNO_LIBRARY, SUNO_META_DB
+    global _ENV_CACHE, HOST, PORT, SUNO_LIBRARY, SUNO_META_DB, ASSETS_DIR
     _ENV_CACHE = _parse_env_file(ENV_FILE)
+    HOST = _str_env("MYSPOT_HOST", _HOST_DEFAULT)
+    PORT = _int_env("MYSPOT_PORT", _PORT_DEFAULT)
     SUNO_LIBRARY = _path_env("SUNO_LIBRARY", _SUNO_LIBRARY_DEFAULT)
     SUNO_META_DB = _path_env("SUNO_META_DB", _SUNO_META_DB_DEFAULT)
+    ASSETS_DIR = _path_env("ASSETS_DIR", _ASSETS_DIR_DEFAULT)
     return _ENV_CACHE
 
 
@@ -72,9 +93,11 @@ def _path_env(name: str, default: str) -> Path:
 
 _SUNO_LIBRARY_DEFAULT = r"C:/Users/lucyl/Desktop/suno_library"
 _SUNO_META_DB_DEFAULT = r"C:/Users/lucyl/Desktop/suno-dl/suno_meta.db"
+_ASSETS_DIR_DEFAULT = r"L:/Media/Audio/suno/albumart"
 
 SUNO_LIBRARY  = _path_env("SUNO_LIBRARY",  _SUNO_LIBRARY_DEFAULT)
 SUNO_META_DB  = _path_env("SUNO_META_DB",  _SUNO_META_DB_DEFAULT)
+ASSETS_DIR    = _path_env("ASSETS_DIR",    _ASSETS_DIR_DEFAULT)
 SUNOSYNC_CACHE = Path(r"C:/Users/lucyl/Desktop/hold/sunosync/SunoSync/library_cache.json")
 
 

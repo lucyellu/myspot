@@ -11,7 +11,7 @@ inspire/ has its own helpers:
 
 Returns either {'prompt'/'file_path', 'model_version'} or {'error'}.
 """
-from . import claude, deepseek, gemini, grok, inspire, pollinations, huggingface
+from . import claude, deepseek, gemini, grok, inspire, pollinations, huggingface, openai_images
 
 
 def tool_status() -> dict:
@@ -19,6 +19,9 @@ def tool_status() -> dict:
         "pollinations":  {"available": pollinations.is_available(),  "kind": "image", "free": True},
         "hf-flux":       {"available": huggingface.is_available(),   "kind": "image", "free": "limited"},
         "hf-ltx-video":  {"available": huggingface.is_available(),   "kind": "video", "free": "limited"},
+        "openai-gpt-image-2":   {"available": openai_images.is_available(), "kind": "image"},
+        "openai-gpt-image-1.5": {"available": openai_images.is_available(), "kind": "image"},
+        "openai-gpt-image-mini": {"available": openai_images.is_available(), "kind": "image"},
         "claude":        {"available": claude.is_available(),        "kind": "prompt"},
         "deepseek":      {"available": deepseek.is_available(),      "kind": "prompt"},
         "gemini-text":   {"available": gemini.is_text_available(),   "kind": "prompt"},
@@ -53,6 +56,12 @@ def generate_image(tool: str, prompt: str, song_id: int, aspect: str = "square")
         return huggingface.generate_image(prompt, song_id, model="black-forest-labs/FLUX.1-schnell", width=w, height=h)
     if tool == "hf-flux-dev":
         return huggingface.generate_image(prompt, song_id, model="black-forest-labs/FLUX.1-dev", width=w, height=h)
+    if tool == "openai-gpt-image-2":
+        return openai_images.generate_image(prompt, song_id, model="gpt-image-2", width=w, height=h)
+    if tool == "openai-gpt-image-1.5":
+        return openai_images.generate_image(prompt, song_id, model="gpt-image-1.5", width=w, height=h)
+    if tool == "openai-gpt-image-mini":
+        return openai_images.generate_image(prompt, song_id, model="gpt-image-1-mini", width=w, height=h, quality="low")
     if tool == "nano-banana":
         return gemini.generate_image(prompt, song_id)
     if tool == "grok":
@@ -111,5 +120,4 @@ def enhance_prompt(model: str, song: dict, user_seed: str | None = None, image_p
     if model in ("claude", "anthropic"):
         return claude.enhance_prompt(song, user_seed=user_seed, image_prompt=image_prompt)
     return {"error": f"unknown prompt model: {model}"}
-
 

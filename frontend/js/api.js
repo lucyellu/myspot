@@ -205,6 +205,35 @@ export const api = {
     return req(`/api/assets?${u}`);
   },
   assetFolders: () => req("/api/asset_folders"),
+  mediaRoots: () => req("/api/media_roots"),
+  djContext: ({ place = "Vancouver", latitude = null, longitude = null } = {}) => {
+    const u = new URLSearchParams();
+    if (place) u.set("place", place);
+    if (latitude != null) u.set("latitude", latitude);
+    if (longitude != null) u.set("longitude", longitude);
+    return req(`/api/dj/context?${u}`);
+  },
+  radioShows: (limit = 30) => req(`/api/radio/shows?limit=${limit}`),
+  radioShow: (id) => req(`/api/radio/shows/${encodeURIComponent(id)}`),
+  radioToday: ({ date = null } = {}) => {
+    const u = new URLSearchParams();
+    if (date) u.set("show_date", date);
+    const qs = u.toString();
+    return req(`/api/radio/shows/today${qs ? "?" + qs : ""}`);
+  },
+  buildWeekdayMorningShow: ({ date = null, place = "Vancouver", targetHours = 1, airTime = "06:00", force = false } = {}) =>
+    req("/api/radio/shows/weekday-morning", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ date, place, targetHours, airTime, force }),
+    }),
+  liveBoards: ({ q = "" } = {}) => {
+    const u = new URLSearchParams();
+    if (q) u.set("q", q);
+    const qs = u.toString();
+    return req(`/api/live_boards${qs ? "?" + qs : ""}`);
+  },
+  liveBoard: (id) => req(`/api/live_boards/${encodeURIComponent(id)}`),
   gensBrowse: ({ limit = 120, offset = 0 } = {}) => {
     const u = new URLSearchParams({ limit, offset });
     return req(`/api/gens_browse?${u}`);
@@ -220,4 +249,5 @@ export const mediaUrl = {
   asset: (id) => `${BASE}/media/asset/${id}`,
   gen: (id) => `${BASE}/media/gen/${id}`,
   export: (id) => `${BASE}/media/export/${id}`,
+  liveBoardRef: (id, idx) => `${BASE}/media/live_board/${encodeURIComponent(id)}/ref/${idx}`,
 };

@@ -1,5 +1,6 @@
 import { renderGenerate } from "./tabs/generate.js";
-import { renderLyrics } from "./tabs/lyrics.js";
+import { renderDJ } from "./tabs/dj.js?v=dj1";
+import { renderLyrics } from "./tabs/lyrics.js?v=lanes2";
 import { renderSources } from "./tabs/sources.js";
 import { renderPrompts } from "./tabs/prompts.js";
 import { renderQueue } from "./tabs/queue.js";
@@ -8,6 +9,7 @@ import { api } from "./api.js";
 import { toast } from "./util.js";
 
 const TABS = {
+  dj: renderDJ,
   generate: renderGenerate,
   lyrics: renderLyrics,
   design: renderDesign,
@@ -40,6 +42,8 @@ export function updateTabCounts(song) {
     write();
     requestAnimationFrame(write);
   };
+
+  set("dj", "ON");
 
   // Gens — count any row with a file_path (covers legacy rows missing status).
   const gens = Array.isArray(song.gens) ? song.gens : [];
