@@ -36,7 +36,7 @@ from .ai import (
 from .ai.queue import queue as job_queue
 from .ai.queue import build_default_prompt
 from .ai import inspire as inspire_mod
-from .render import render_slideshow, have_ffmpeg
+from .render import render_slideshow, render_lyric_video, have_ffmpeg
 from .radio import (
     build_weekday_morning_show,
     list_radio_shows,
@@ -1072,6 +1072,8 @@ def health():
     key_map = {
         "claude": "ANTHROPIC_API_KEY",
         "deepseek": "DEEPSEEK_API_KEY",
+        "groq": "GROQ_API_KEY",
+        "cerebras": "CEREBRAS_API_KEY",
         "gemini-text": "GEMINI_API_KEY",
         "nano-banana": "GEMINI_API_KEY",
         "grok": "XAI_API_KEY",
@@ -1270,7 +1272,7 @@ def clear_completed_jobs():
 @app.post("/api/songs/{song_id}/auto")
 def auto_pipeline(song_id: int, payload: dict = Body({})):
     """One-click cheapest-free pipeline:
-        1. Enhance prompt via best available text model (Gemini free → DeepSeek paid)
+        1. Enhance prompt via best available text model (Gemini free → Groq/Cerebras fast → DeepSeek paid)
         2. Generate N images via best available image tool (Pollinations always)
         3. Optionally animate first image via best available video tool
 
@@ -1448,6 +1450,66 @@ def media_export(song_id: int):
     if not out.exists():
         raise HTTPException(404, "export not yet rendered")
     return FileResponse(out, media_type="video/mp4", filename=f"song_{song_id}.mp4")
+
+
+@app.post("/api/songs/{song_id}/lyrics/export")
+def export_lyrics(song_id: int):
+    s = _conn.execute(
+        "SELECT id, title, mp3_path, duration, jpg_path FROM songs WHERE id=?", (song_id,)
+    ).fetchone()
+    if s is None:
+        raise HTTPException(404, "song not found")
+    lyrics = _rows(
+        _conn.execute(
+            "SELECT idx, text, section FROM lyric_lines WHERE song_id=? ORDER BY idx",
+            (song_id,),
+        ).fetchall()
+    )
+
+    bg = None
+    gen_bg = _conn.execute(
+        """SELECT file_path FROM gens
+           WHERE song_id=? AND kind='image' AND status='completed' AND file_path IS NOT NULL
+           ORDER BY id LIMIT 1""",
+        (song_id,),
+    ).fetchone()
+    if gen_bg and gen_bg["file_path"] and Path(gen_bg["file_path"]).exists():
+        bg = gen_bg["file_path"]
+    elif s["jpg_path"] and Path(s["jpg_path"]).exists():
+        bg = s["jpg_path"]
+
+    result = render_lyric_video(
+        song_id,
+        s["title"] or f"song {song_id}",
+        s["mp3_path"],
+        s["duration"] or 0,
+        lyrics,
+        background_path=bg,
+    )
+    if "file_path" in result and result.get("file_path"):
+        with _db_lock:
+            cur = _conn.execute(
+                """INSERT INTO gens(song_id, kind, tool, prompt, file_path, status)
+                   VALUES(?,?,?,?,?,?)""",
+                (
+                    song_id,
+                    "video",
+                    "lyric-export",
+                    f"lyric video render of {result.get('line_count', 0)} lines",
+                    result["file_path"],
+                    "completed",
+                ),
+            )
+            result["gen_id"] = cur.lastrowid
+    return result
+
+
+@app.get("/media/lyrics-export/{song_id}")
+def media_lyrics_export(song_id: int):
+    out = EXPORTS_DIR / f"song_{song_id}_lyrics.mp4"
+    if not out.exists():
+        raise HTTPException(404, "lyric export not yet rendered")
+    return FileResponse(out, media_type="video/mp4", filename=f"song_{song_id}_lyrics.mp4")
 
 
 @app.post("/api/songs/{song_id}/gens/from_asset/{asset_id}")

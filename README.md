@@ -2,7 +2,7 @@
 
 **[Try it live →](https://myspot-web.netlify.app/)**
 
-Personal YouTube-style player for your Suno music library, with a six-tab AI sidepanel, **free unlimited image generation via Pollinations FLUX**, prompt enhancement (DeepSeek / Gemini / Claude), free image-to-prompt vision (Gemini), live drag-drop visual track that plays in sequence with the song, image-to-video animation (HF LTX-Video automated + Kling manual), and one-click music-video MP4 export.
+Personal YouTube-style player for your Suno music library, with a six-tab AI sidepanel, **free unlimited image generation via Pollinations FLUX**, prompt enhancement (Gemini / Groq / Cerebras / DeepSeek / Claude), free image-to-prompt vision (Gemini), live drag-drop visual track that plays in sequence with the song, image-to-video animation (HF LTX-Video automated + Kling manual), and one-click music-video MP4 export.
 
 > **For developers picking up the project:** read [STATE.md](./STATE.md) for current architecture + endpoints, [PLAN.md](./PLAN.md) for the roadmap, [MODELS.md](./MODELS.md) for the full AI service landscape, [DESIGN-BRIEF.md](./DESIGN-BRIEF.md) for the in-flight frontend redesign, [CONCERT.md](./CONCERT.md) for the multiplayer concert vision.
 
@@ -53,8 +53,10 @@ The recommended path is to copy `.env.example` → `.env` (gitignored) and paste
 
 | Step | Tool | Key | Cost | Free tier |
 | --- | --- | --- | --- | --- |
-| **Prompt enhance** | **DeepSeek V3** | `DEEPSEEK_API_KEY` | ~$0.0005 / call | none — but $5 buys ~10,000 calls |
 | Prompt enhance | Gemini 2.5 Flash | `GEMINI_API_KEY` | ~$0.0008 / call | **250 calls / day free** |
+| Prompt enhance | Groq Llama 3.3 70B | `GROQ_API_KEY` | provider pricing/free tier varies | account-dependent |
+| Prompt enhance | Cerebras GPT OSS 120B | `CEREBRAS_API_KEY` | provider pricing/free tier varies | account-dependent |
+| **Prompt enhance** | **DeepSeek V3** | `DEEPSEEK_API_KEY` | ~$0.0005 / call | none — but $5 buys ~10,000 calls |
 | Prompt enhance | Claude Sonnet 4.6 | `ANTHROPIC_API_KEY` | ~$0.005 / call | none |
 | **Image inspire** | Gemini 2.5 Flash (vision) | `GEMINI_API_KEY` | free or ~$0.001 / call | yes, with auto-fallback to flash-lite/2.0-flash on capacity |
 | **Image gen** | **Nano Banana** | `GEMINI_API_KEY` | ~$0.04 / image | **gone for new projects** — billing required |
@@ -67,7 +69,7 @@ The recommended path is to copy `.env.example` → `.env` (gitignored) and paste
 
 | Step | Default in UI | Reason |
 | --- | --- | --- |
-| Prompt enhance | **Gemini 2.5 Flash** (free 250/day) → DeepSeek paid fallback | Free covers most days; DeepSeek $0.0005/call when free runs out. |
+| Prompt enhance | **Gemini 2.5 Flash** (free 250/day) → Groq/Cerebras fast fallback → DeepSeek paid fallback | Free covers most days; fast hosted fallbacks light up when keys are present. |
 | Image inspire | Gemini Vision | Free 250/day per model; auto-falls-through to flash-lite/2.0-flash on 503/429. |
 | Image gen | **Pollinations FLUX-Realism** (FREE unlimited) | No key, no quota, FLUX.dev-Realism quality. |
 | Image-to-video (auto) | HF LTX-Video | ~3-60/mo free with `HF_TOKEN`. |
@@ -80,6 +82,8 @@ The recommended path is to copy `.env.example` → `.env` (gitignored) and paste
 | --- | --- |
 | Anthropic Claude | https://console.anthropic.com/settings/keys |
 | DeepSeek | https://platform.deepseek.com/api_keys → top up at /usage/balance |
+| Groq | https://console.groq.com/keys |
+| Cerebras | https://cloud.cerebras.ai/ |
 | Google Gemini (text + vision + image) | https://aistudio.google.com/apikey → click project → "Set up billing" if you want image gen |
 | xAI Grok | https://console.x.ai/ → "API Keys" |
 
@@ -141,6 +145,8 @@ myspot/
     ai/
       __init__.py       # tool registry + dispatch (generate_image, enhance_prompt)
       claude.py         # prompt enhancer (claude-sonnet-4-6)
+      groq.py           # prompt enhancer via Groq OpenAI-compatible chat
+      cerebras.py       # prompt enhancer via Cerebras OpenAI-compatible chat
       deepseek.py       # prompt enhancer via OpenAI-compatible (deepseek-chat V3)
       gemini.py         # Nano Banana image gen + Gemini text enhance (2.5-flash)
       inspire.py        # image-to-prompt via Gemini vision (with model fallback)

@@ -3,7 +3,7 @@
 Each tool exposes:
     is_available() -> bool
     generate_image(prompt: str, song_id: int) -> dict        # gemini, grok
-    enhance_prompt(song: dict, user_seed?, image_prompt?) -> dict  # claude, deepseek
+    enhance_prompt(song: dict, user_seed?, image_prompt?) -> dict  # claude, deepseek, groq, cerebras
 
 inspire/ has its own helpers:
     inspire_from_image_bytes(...)
@@ -11,7 +11,18 @@ inspire/ has its own helpers:
 
 Returns either {'prompt'/'file_path', 'model_version'} or {'error'}.
 """
-from . import claude, deepseek, gemini, grok, inspire, pollinations, huggingface, openai_images
+from . import (
+    cerebras,
+    claude,
+    deepseek,
+    gemini,
+    grok,
+    groq,
+    inspire,
+    pollinations,
+    huggingface,
+    openai_images,
+)
 
 
 def tool_status() -> dict:
@@ -24,6 +35,8 @@ def tool_status() -> dict:
         "openai-gpt-image-mini": {"available": openai_images.is_available(), "kind": "image"},
         "claude":        {"available": claude.is_available(),        "kind": "prompt"},
         "deepseek":      {"available": deepseek.is_available(),      "kind": "prompt"},
+        "groq":          {"available": groq.is_available(),          "kind": "prompt"},
+        "cerebras":      {"available": cerebras.is_available(),      "kind": "prompt"},
         "gemini-text":   {"available": gemini.is_text_available(),   "kind": "prompt"},
         "nano-banana":   {"available": gemini.is_available(),        "kind": "image"},
         "grok":          {"available": grok.is_available(),          "kind": "image"},
@@ -85,6 +98,10 @@ def auto_text_model() -> str | None:
     """Pick cheapest available prompt-enhance model. None = nothing configured."""
     if gemini.is_text_available():
         return "gemini-text"  # 250/day free, very cheap paid
+    if groq.is_available():
+        return "groq"         # fast free-tier friendly prompt drafting
+    if cerebras.is_available():
+        return "cerebras"     # very fast hosted open-weight inference
     if deepseek.is_available():
         return "deepseek"     # cheap paid, no free
     if claude.is_available():
@@ -117,6 +134,10 @@ def enhance_prompt(model: str, song: dict, user_seed: str | None = None, image_p
         return deepseek.enhance_prompt(song, user_seed=user_seed, image_prompt=image_prompt)
     if model in ("gemini", "gemini-text"):
         return gemini.enhance_prompt(song, user_seed=user_seed, image_prompt=image_prompt)
+    if model == "groq":
+        return groq.enhance_prompt(song, user_seed=user_seed, image_prompt=image_prompt)
+    if model == "cerebras":
+        return cerebras.enhance_prompt(song, user_seed=user_seed, image_prompt=image_prompt)
     if model in ("claude", "anthropic"):
         return claude.enhance_prompt(song, user_seed=user_seed, image_prompt=image_prompt)
     return {"error": f"unknown prompt model: {model}"}

@@ -1,6 +1,6 @@
-import { api } from "./api.js?v=radio-onehour1";
+import { api } from "./api.js?v=lyric-export1";
 import { renderHome } from "./views/home.js";
-import { renderWatch } from "./views/watch.js";
+import { renderWatch } from "./views/watch.js?v=lyric-export1";
 import { renderAssets } from "./views/assets.js";
 import { renderRadio } from "./views/radio.js?v=radio-onehour1";
 import { renderLiveBoards } from "./views/liveBoards.js?v=liveboards2";

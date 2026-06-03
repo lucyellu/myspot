@@ -1,6 +1,6 @@
 import { renderGenerate } from "./tabs/generate.js";
 import { renderDJ } from "./tabs/dj.js?v=dj1";
-import { renderLyrics } from "./tabs/lyrics.js?v=lanes2";
+import { renderLyrics } from "./tabs/lyrics.js?v=lyric-export1";
 import { renderSources } from "./tabs/sources.js";
 import { renderPrompts } from "./tabs/prompts.js";
 import { renderQueue } from "./tabs/queue.js";

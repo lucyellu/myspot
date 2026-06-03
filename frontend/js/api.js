@@ -185,6 +185,7 @@ export const api = {
       body: JSON.stringify({ count, animate, seed }),
     }),
   exportSong: (songId) => req(`/api/songs/${songId}/export`, { method: "POST" }),
+  exportLyrics: (songId) => req(`/api/songs/${songId}/lyrics/export`, { method: "POST" }),
   attachAsset: (songId, assetId) =>
     req(`/api/songs/${songId}/gens/from_asset/${assetId}`, { method: "POST" }),
   health: () => req("/api/health"),
@@ -249,5 +250,6 @@ export const mediaUrl = {
   asset: (id) => `${BASE}/media/asset/${id}`,
   gen: (id) => `${BASE}/media/gen/${id}`,
   export: (id) => `${BASE}/media/export/${id}`,
+  lyricExport: (id) => `${BASE}/media/lyrics-export/${id}`,
   liveBoardRef: (id, idx) => `${BASE}/media/live_board/${encodeURIComponent(id)}/ref/${idx}`,
 };

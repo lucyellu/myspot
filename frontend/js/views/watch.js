@@ -1,6 +1,6 @@
 import { api, mediaUrl } from "../api.js";
 import { fmtDuration, fmtAccount, el, clear, toast, channelColor } from "../util.js";
-import { renderTab, currentTab, setSong } from "../sidepanel.js?v=dj1";
+import { renderTab, currentTab, setSong } from "../sidepanel.js?v=lyric-export1";
 import { attachHalftone } from "../components/halftone.js";
 import { applyDesignSettings } from "../tabs/design.js";
 import { loadPlayerSong, setPlayerContext, queueAutoplayForRoute, getAudio } from "../player.js";

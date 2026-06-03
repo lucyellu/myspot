@@ -2602,30 +2602,22 @@ main {
   display: flex;
   flex-direction: column;
   gap: 2px;
-  padding-bottom: 50vh;
+  padding-bottom: 20px;
 }
 .lyric-line {
   padding: 3px 6px; border-radius: 4px;
   font-family: var(--font-body); font-size: 15px; line-height: 1.55;
   color: var(--ink-soft);
   letter-spacing: 0.02em;
-  transition: background .12s ease, color .12s ease, transform .12s ease;
-}
-.lyric-line.active {
-  background: rgba(200,232,95,0.22);
-  color: var(--ink);
-  font-weight: 700;
-  transform: translateX(4px);
-}
-.lyric-line.past { color: var(--ink-mute); }
-.lyric-line.future { color: var(--ink-soft); }
-.lyric-line.active::before {
-  content: "▶";
-  display: inline-block;
-  margin-right: 7px;
-  color: var(--accent-2);
 }
 .lyric-line.empty { color: var(--ink-mute); font-style: italic; padding: 8px 0; }
+.lyric-export-panel {
+  margin-bottom: 12px;
+}
+.lyric-export-status {
+  min-height: 18px;
+  margin-top: 8px;
+}
 
 /* ========== Sources / derivatives ========== */
 .derivative-group h4 {
