@@ -5,13 +5,16 @@ Run with:
     uvicorn backend.app:app --reload --host 127.0.0.1 --port 7777
 """
 import asyncio
+import csv
 import json
 import os
 import re
 import threading
 from collections import defaultdict
+from datetime import datetime
 from pathlib import Path  # noqa
 
+import httpx
 from fastapi import FastAPI, HTTPException, Query, Request, Body, UploadFile, File
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import FileResponse, JSONResponse, StreamingResponse
@@ -33,7 +36,13 @@ from .ai import (
 from .ai.queue import queue as job_queue
 from .ai.queue import build_default_prompt
 from .ai import inspire as inspire_mod
-from .render import render_slideshow, have_ffmpeg
+from .render import render_slideshow, render_lyric_video, have_ffmpeg
+from .radio import (
+    build_weekday_morning_show,
+    list_radio_shows,
+    load_radio_show,
+    load_weekday_morning_show,
+)
 
 
 app = FastAPI(title="myspot", version="0.1.0")
@@ -98,6 +107,135 @@ def _safe_path(p: str | None) -> str | None:
     if not p:
         return None
     return str(p).replace("\\", "/")
+
+
+def _norm_path(p: str | None) -> str:
+    return str(p or "").replace("\\", "/")
+
+
+_LIVE_BOARDS_DIR = EXPORTS_DIR / "live_video_boards"
+
+
+def _read_live_board_index() -> list[dict]:
+    index_path = _LIVE_BOARDS_DIR / "index.csv"
+    if not index_path.exists():
+        return []
+    with index_path.open("r", encoding="utf-8-sig", newline="") as f:
+        rows = list(csv.DictReader(f))
+    out = []
+    for row in rows:
+        prompt_pack = Path(row.get("PromptPack") or "")
+        board_id = prompt_pack.parent.name if prompt_pack.parent.name else ""
+        if not board_id:
+            continue
+        out.append({
+            "id": board_id,
+            "title": row.get("Title") or board_id,
+            "variants": int(row.get("Variants") or 0),
+            "audio": _safe_path(row.get("Audio")),
+            "lyrics": _safe_path(row.get("Lyrics")),
+            "cover": _safe_path(row.get("Cover")),
+            "prompt_pack": _safe_path(row.get("PromptPack")),
+        })
+    return out
+
+
+def _live_board_dir(board_id: str) -> Path:
+    if not board_id:
+        raise HTTPException(404, "board not found")
+    base = _LIVE_BOARDS_DIR.resolve()
+    candidate = (_LIVE_BOARDS_DIR / board_id).resolve()
+    try:
+        candidate.relative_to(base)
+    except ValueError:
+        raise HTTPException(400, "invalid board id")
+    if not candidate.is_dir():
+        raise HTTPException(404, "board not found")
+    return candidate
+
+
+def _section(lines: list[str], name: str) -> list[str]:
+    start = None
+    heading = f"## {name}".lower()
+    for i, line in enumerate(lines):
+        if line.strip().lower() == heading:
+            start = i + 1
+            break
+    if start is None:
+        return []
+    end = len(lines)
+    for i in range(start, len(lines)):
+        if lines[i].startswith("## "):
+            end = i
+            break
+    return [l.rstrip() for l in lines[start:end]]
+
+
+def _parse_live_board_markdown(path: Path) -> dict:
+    text = path.read_text(encoding="utf-8")
+    lines = text.splitlines()
+
+    def bullet_map(section_name: str) -> dict:
+        data = {}
+        for line in _section(lines, section_name):
+            m = re.match(r"^-\s*([^:]+):\s*(.*)$", line.strip())
+            if m:
+                data[m.group(1).strip().lower().replace(" ", "_")] = m.group(2).strip()
+        return data
+
+    refs = []
+    for line in _section(lines, "Reference Album Art"):
+        if line.strip().startswith("- "):
+            refs.append(line.strip()[2:].strip())
+
+    anchors = []
+    for line in _section(lines, "Lyric / Moment Anchors"):
+        m = re.match(r"^\d+\.\s*(.*)$", line.strip())
+        if m:
+            anchors.append(m.group(1).strip())
+
+    contact_lines = [l for l in _section(lines, "9-Grid Contact Sheet Prompt") if l.strip()]
+    keyframe_lines = [l for l in _section(lines, "Individual 16:9 Keyframe Template") if l.strip()]
+    motion_lines = [l.strip()[2:].strip() for l in _section(lines, "Video Motion Notes") if l.strip().startswith("- ")]
+
+    panels = []
+    for line in contact_lines:
+        m = re.match(r"^(\d+)\.\s*(.*)$", line.strip())
+        if m:
+            panels.append({"n": int(m.group(1)), "prompt": m.group(2).strip()})
+
+    performance = "\n".join(l for l in _section(lines, "Live Performance Niche") if l.strip()).strip()
+    return {
+        "markdown": text,
+        "source": bullet_map("Source"),
+        "reference_art": [_safe_path(r) for r in refs],
+        "performance": performance,
+        "anchors": anchors,
+        "contact_prompt": "\n".join(contact_lines).strip(),
+        "keyframe_template": "\n".join(keyframe_lines).strip(),
+        "panels": panels,
+        "motion_notes": motion_lines,
+    }
+
+
+def _find_live_board_song(board: dict, select_cols: str = "*"):
+    audio_path = _norm_path(board.get("audio"))
+    row = _conn.execute(
+        f"SELECT {select_cols} FROM songs WHERE mp3_path=? OR wav_path=? LIMIT 1",
+        (audio_path, audio_path),
+    ).fetchone()
+    if row:
+        return row
+
+    title = (board.get("title") or "").strip()
+    if not title:
+        return None
+    return _conn.execute(
+        f"""SELECT {select_cols} FROM songs
+            WHERE lower(title)=lower(?) OR lower(base_title)=lower(?)
+            ORDER BY version ASC, id ASC LIMIT 1""",
+        (title, title),
+    ).fetchone()
 
 
 def canonical_account(name: str) -> str:
@@ -171,7 +309,7 @@ def list_songs(
         "title":        f"s.base_title {D}, s.version {D}",
         "version":      f"s.version {D}, s.id {D}",
         "popular":      f"s.suno_play_count {D} NULLS LAST, s.id {D}",
-        "liked":        f"s.liked {D}, s.id {D}",
+        "liked":        f"s.suno_upvote_count {D} NULLS LAST, s.id {D}",
         "gens":         f"gens_count {D}, s.id {D}",
         "recent_played": f"last_played_at {D} NULLS LAST, s.id {D}",
     }[sort]
@@ -250,6 +388,81 @@ def smart_tag_counts():
         out.append({"tag": name, "n": n})
     out.sort(key=lambda r: -r["n"])
     return out
+
+
+# ----------------------------- Live boards --------------------------
+
+@app.get("/api/live_boards")
+def live_boards(q: str | None = None):
+    boards = _read_live_board_index()
+    query = (q or "").strip().lower()
+    items = []
+    for board in boards:
+        if query and query not in board["title"].lower():
+            continue
+        song = _find_live_board_song(
+            board,
+            "id, title, artist, account, genre, bpm, duration, jpg_path",
+        )
+        item = dict(board)
+        item["song"] = dict(song) if song else None
+        item["image_count"] = 0
+        item["video_count"] = 0
+        item["latest_image_gen_id"] = None
+        item["latest_video_gen_id"] = None
+        if song:
+            counts = _conn.execute(
+                """SELECT kind, COUNT(*) AS n, MAX(id) AS latest
+                   FROM gens
+                   WHERE song_id=? AND status='completed' AND file_path IS NOT NULL
+                   GROUP BY kind""",
+                (song["id"],),
+            ).fetchall()
+            for r in counts:
+                if r["kind"] == "image":
+                    item["image_count"] = r["n"]
+                    item["latest_image_gen_id"] = r["latest"]
+                elif r["kind"] == "video":
+                    item["video_count"] = r["n"]
+                    item["latest_video_gen_id"] = r["latest"]
+        items.append(item)
+    return {"items": items, "total": len(items), "root": _safe_path(str(_LIVE_BOARDS_DIR))}
+
+
+@app.get("/api/live_boards/{board_id:path}")
+def live_board_detail(board_id: str):
+    board_dir = _live_board_dir(board_id)
+    shotlist = board_dir / "shotlist.md"
+    if not shotlist.exists():
+        raise HTTPException(404, "shotlist not found")
+
+    board = next((b for b in _read_live_board_index() if b["id"] == board_id), None)
+    if board is None:
+        raise HTTPException(404, "board not found")
+
+    detail = _parse_live_board_markdown(shotlist)
+    song = _find_live_board_song(
+        board,
+        """id, title, artist, account, genre, bpm, duration, jpg_path,
+           suno_style, suno_model""",
+    )
+
+    gens = []
+    if song:
+        gens = _rows(
+            _conn.execute(
+                """SELECT id, kind, tool, prompt, file_path, status, error, parent_gen_id, created_at
+                   FROM gens WHERE song_id=? ORDER BY id DESC LIMIT 80""",
+                (song["id"],),
+            ).fetchall()
+        )
+
+    return {
+        **board,
+        **detail,
+        "song": dict(song) if song else None,
+        "gens": gens,
+    }
 
 
 def _fts_query(q: str) -> str:
@@ -721,6 +934,137 @@ def _song_for_ai(song_id: int) -> dict:
     return out
 
 
+_WMO_WEATHER = {
+    0: "clear sky",
+    1: "mainly clear",
+    2: "partly cloudy",
+    3: "overcast",
+    45: "fog",
+    48: "rime fog",
+    51: "light drizzle",
+    53: "drizzle",
+    55: "heavy drizzle",
+    61: "light rain",
+    63: "rain",
+    65: "heavy rain",
+    71: "light snow",
+    73: "snow",
+    75: "heavy snow",
+    80: "light rain showers",
+    81: "rain showers",
+    82: "violent rain showers",
+    95: "thunderstorm",
+}
+
+
+def _daypart(hour: int) -> str:
+    if 5 <= hour < 11:
+        return "morning"
+    if 11 <= hour < 17:
+        return "afternoon"
+    if 17 <= hour < 22:
+        return "evening"
+    return "late night"
+
+
+@app.get("/api/dj/context")
+def dj_context(
+    place: str = Query("Vancouver"),
+    latitude: float | None = None,
+    longitude: float | None = None,
+):
+    """Lightweight topical context for the DJ host. Uses Open-Meteo's no-key
+    public APIs for weather; if weather lookup fails, the rest still works."""
+    now = datetime.now().astimezone()
+    date_fmt = "%A, %B %#d, %Y" if os.name == "nt" else "%A, %B %-d, %Y"
+    time_fmt = "%#I:%M %p" if os.name == "nt" else "%-I:%M %p"
+    out = {
+        "now": now.isoformat(),
+        "date": now.strftime(date_fmt),
+        "time": now.strftime(time_fmt),
+        "daypart": _daypart(now.hour),
+        "place": place,
+        "weather": None,
+        "source": "Open-Meteo",
+    }
+    try:
+        lat, lon, resolved = latitude, longitude, place
+        with httpx.Client(timeout=6.0, follow_redirects=True) as client:
+            if lat is None or lon is None:
+                geo = client.get(
+                    "https://geocoding-api.open-meteo.com/v1/search",
+                    params={"name": place, "count": 1, "language": "en", "format": "json"},
+                )
+                geo.raise_for_status()
+                results = geo.json().get("results") or []
+                if not results:
+                    raise ValueError("place not found")
+                g = results[0]
+                lat, lon = float(g["latitude"]), float(g["longitude"])
+                bits = [g.get("name"), g.get("admin1"), g.get("country")]
+                resolved = ", ".join([b for b in bits if b])
+            wx = client.get(
+                "https://api.open-meteo.com/v1/forecast",
+                params={
+                    "latitude": lat,
+                    "longitude": lon,
+                    "current": "temperature_2m,precipitation,weather_code,wind_speed_10m",
+                    "temperature_unit": "celsius",
+                    "wind_speed_unit": "kmh",
+                    "timezone": "auto",
+                },
+            )
+            wx.raise_for_status()
+            cur = (wx.json() or {}).get("current") or {}
+            code = int(cur.get("weather_code") or 0)
+            out["place"] = resolved
+            out["weather"] = {
+                "summary": _WMO_WEATHER.get(code, "interesting weather"),
+                "temperature_c": cur.get("temperature_2m"),
+                "precipitation": cur.get("precipitation"),
+                "wind_kph": cur.get("wind_speed_10m"),
+                "unit": "celsius",
+                "code": code,
+            }
+    except Exception as e:
+        out["weather_error"] = str(e)[:160]
+    return out
+
+
+@app.get("/api/radio/shows")
+def radio_shows(limit: int = Query(30, ge=1, le=100)):
+    return {"items": list_radio_shows(limit)}
+
+
+@app.get("/api/radio/shows/today")
+def radio_today(show_date: str | None = None):
+    show = load_weekday_morning_show(show_date)
+    if show is None:
+        raise HTTPException(404, "weekday morning show not built yet")
+    return show
+
+
+@app.get("/api/radio/shows/{show_id}")
+def radio_show(show_id: str):
+    show = load_radio_show(show_id)
+    if show is None:
+        raise HTTPException(404, "radio show not found")
+    return show
+
+
+@app.post("/api/radio/shows/weekday-morning")
+def radio_build_weekday_morning(payload: dict = Body(default_factory=dict)):
+    with _db_lock:
+        return build_weekday_morning_show(
+            _conn,
+            show_date=(payload or {}).get("date"),
+            place=(payload or {}).get("place") or "Vancouver",
+            target_hours=float((payload or {}).get("targetHours") or 1),
+            air_time=(payload or {}).get("airTime") or "06:00",
+            force=bool((payload or {}).get("force")),
+        )
+
+
 @app.get("/api/health")
 def health():
     tools = tool_status()
@@ -728,12 +1072,17 @@ def health():
     key_map = {
         "claude": "ANTHROPIC_API_KEY",
         "deepseek": "DEEPSEEK_API_KEY",
+        "groq": "GROQ_API_KEY",
+        "cerebras": "CEREBRAS_API_KEY",
         "gemini-text": "GEMINI_API_KEY",
         "nano-banana": "GEMINI_API_KEY",
         "grok": "XAI_API_KEY",
         "inspire": "GEMINI_API_KEY",
         "hf-flux": "HF_TOKEN",
         "hf-ltx-video": "HF_TOKEN",
+        "openai-gpt-image-2": "OPENAI_API_KEY",
+        "openai-gpt-image-1.5": "OPENAI_API_KEY",
+        "openai-gpt-image-mini": "OPENAI_API_KEY",
     }
     for tool, info in tools.items():
         info["source"] = secret_source(key_map.get(tool, ""))
@@ -923,7 +1272,7 @@ def clear_completed_jobs():
 @app.post("/api/songs/{song_id}/auto")
 def auto_pipeline(song_id: int, payload: dict = Body({})):
     """One-click cheapest-free pipeline:
-        1. Enhance prompt via best available text model (Gemini free → DeepSeek paid)
+        1. Enhance prompt via best available text model (Gemini free → Groq/Cerebras fast → DeepSeek paid)
         2. Generate N images via best available image tool (Pollinations always)
         3. Optionally animate first image via best available video tool
 
@@ -1103,6 +1452,66 @@ def media_export(song_id: int):
     return FileResponse(out, media_type="video/mp4", filename=f"song_{song_id}.mp4")
 
 
+@app.post("/api/songs/{song_id}/lyrics/export")
+def export_lyrics(song_id: int):
+    s = _conn.execute(
+        "SELECT id, title, mp3_path, duration, jpg_path FROM songs WHERE id=?", (song_id,)
+    ).fetchone()
+    if s is None:
+        raise HTTPException(404, "song not found")
+    lyrics = _rows(
+        _conn.execute(
+            "SELECT idx, text, section FROM lyric_lines WHERE song_id=? ORDER BY idx",
+            (song_id,),
+        ).fetchall()
+    )
+
+    bg = None
+    gen_bg = _conn.execute(
+        """SELECT file_path FROM gens
+           WHERE song_id=? AND kind='image' AND status='completed' AND file_path IS NOT NULL
+           ORDER BY id LIMIT 1""",
+        (song_id,),
+    ).fetchone()
+    if gen_bg and gen_bg["file_path"] and Path(gen_bg["file_path"]).exists():
+        bg = gen_bg["file_path"]
+    elif s["jpg_path"] and Path(s["jpg_path"]).exists():
+        bg = s["jpg_path"]
+
+    result = render_lyric_video(
+        song_id,
+        s["title"] or f"song {song_id}",
+        s["mp3_path"],
+        s["duration"] or 0,
+        lyrics,
+        background_path=bg,
+    )
+    if "file_path" in result and result.get("file_path"):
+        with _db_lock:
+            cur = _conn.execute(
+                """INSERT INTO gens(song_id, kind, tool, prompt, file_path, status)
+                   VALUES(?,?,?,?,?,?)""",
+                (
+                    song_id,
+                    "video",
+                    "lyric-export",
+                    f"lyric video render of {result.get('line_count', 0)} lines",
+                    result["file_path"],
+                    "completed",
+                ),
+            )
+            result["gen_id"] = cur.lastrowid
+    return result
+
+
+@app.get("/media/lyrics-export/{song_id}")
+def media_lyrics_export(song_id: int):
+    out = EXPORTS_DIR / f"song_{song_id}_lyrics.mp4"
+    if not out.exists():
+        raise HTTPException(404, "lyric export not yet rendered")
+    return FileResponse(out, media_type="video/mp4", filename=f"song_{song_id}_lyrics.mp4")
+
+
 @app.post("/api/songs/{song_id}/gens/from_asset/{asset_id}")
 def attach_asset_as_gen(song_id: int, asset_id: int):
     """Reuse an existing asset (image/video) as a song's visual without copying it."""
@@ -1183,6 +1592,15 @@ def asset_folders():
     return out
 
 
+@app.get("/api/media_roots")
+def media_roots():
+    return {
+        "assets_dir": _safe_path(str(ASSETS_DIR)),
+        "gens_dir": _safe_path(str(GENS_DIR)),
+        "exports_dir": _safe_path(str(EXPORTS_DIR)),
+    }
+
+
 @app.get("/api/gens_browse")
 def gens_browse(
     limit: int = Query(120, ge=1, le=500),
@@ -1220,6 +1638,28 @@ def _under(p: str, allowed_dirs: list[Path]) -> bool:
 
 
 _MEDIA_ROOTS = [SUNO_LIBRARY, ASSETS_DIR, GENS_DIR, EXPORTS_DIR]
+_LIVE_REF_ROOTS = _MEDIA_ROOTS + [
+    Path("L:/Media/Audio/suno/albumart"),
+    Path("L:/Media/Audio/suno_library"),
+]
+
+
+@app.get("/media/live_board/{board_id:path}/ref/{idx}")
+def media_live_board_ref(board_id: str, idx: int):
+    board_dir = _live_board_dir(board_id)
+    shotlist = board_dir / "shotlist.md"
+    if not shotlist.exists():
+        raise HTTPException(404, "shotlist not found")
+    refs = _parse_live_board_markdown(shotlist).get("reference_art") or []
+    if idx < 0 or idx >= len(refs):
+        raise HTTPException(404, "reference not found")
+    path = refs[idx]
+    if not _under(path, _LIVE_REF_ROOTS):
+        raise HTTPException(403, "forbidden")
+    fp = Path(path)
+    if not fp.exists():
+        raise HTTPException(404, "reference missing")
+    return FileResponse(fp)
 
 
 @app.get("/media/audio/{song_id}")
@@ -1239,7 +1679,9 @@ def media_cover(song_id: int):
         raise HTTPException(404, "cover not found")
     if not _under(row["jpg_path"], _MEDIA_ROOTS):
         raise HTTPException(403, "forbidden")
-    return FileResponse(row["jpg_path"])
+    resp = FileResponse(row["jpg_path"])
+    resp.headers["Cache-Control"] = "no-cache"
+    return resp
 
 
 @app.get("/media/asset/{asset_id}")
@@ -1286,6 +1728,148 @@ def reindex_endpoint():
 @app.get("/api/reindex/status")
 def reindex_status():
     return _reindex_state
+
+
+@app.post("/api/repair-art")
+def repair_art():
+    """Fix blurry album art in two passes:
+    1. For songs with suno_id: copy high-res local_art from suno_meta.db to jpg_path.
+    2. For versioned songs with no suno_id: copy base song's high-res art to their jpg_path.
+    Overwrites in-place — no reindex needed.
+    """
+    import sqlite3 as _sqlite3
+    import shutil
+    try:
+        from PIL import Image as _Image
+        def _dim(p):
+            try:
+                w, h = _Image.open(p).size
+                return min(w, h)
+            except Exception:
+                return 0
+    except ImportError:
+        def _dim(p):
+            return 9999  # can't check; assume ok
+
+    from .config import SUNO_META_DB
+    MIN_GOOD = 512
+
+    copied_via_suno = 0
+    copied_via_base = 0
+    skipped = 0
+
+    # --- Pass 1: suno_id match ---
+    if SUNO_META_DB.exists():
+        sconn = _sqlite3.connect(str(SUNO_META_DB))
+        sconn.row_factory = _sqlite3.Row
+        # Build map: suno_id -> high-res local_art path
+        suno_art: dict[str, Path] = {}
+        for row in sconn.execute("SELECT id, local_art FROM songs WHERE local_art IS NOT NULL AND art_low_res=0").fetchall():
+            p = Path(row["local_art"])
+            if p.exists() and _dim(p) >= MIN_GOOD:
+                suno_art[row["id"]] = p
+        sconn.close()
+
+        blurry_with_id = _conn.execute(
+            "SELECT id, suno_id, jpg_path FROM songs WHERE suno_id IS NOT NULL AND jpg_path IS NOT NULL"
+        ).fetchall()
+        for row in blurry_with_id:
+            jp = Path(row["jpg_path"])
+            if not jp.exists():
+                continue
+            if _dim(jp) >= MIN_GOOD:
+                continue
+            src = suno_art.get(row["suno_id"])
+            if src and src != jp:
+                try:
+                    shutil.copy2(str(src), str(jp))
+                    copied_via_suno += 1
+                except Exception:
+                    skipped += 1
+            else:
+                skipped += 1
+
+    # --- Pass 2: base_title propagation for versioned songs with no suno_id ---
+    # Build map: base_title -> best high-res jpg_path among songs in myspot
+    base_art: dict[str, Path] = {}
+    for row in _conn.execute("SELECT base_title, jpg_path FROM songs WHERE jpg_path IS NOT NULL").fetchall():
+        p = Path(row["jpg_path"])
+        if not p.exists():
+            continue
+        d = _dim(p)
+        existing = base_art.get(row["base_title"])
+        if existing is None or d > _dim(existing):
+            if d >= MIN_GOOD:
+                base_art[row["base_title"]] = p
+
+    no_id_blurry = _conn.execute(
+        "SELECT id, base_title, jpg_path FROM songs WHERE suno_id IS NULL AND jpg_path IS NOT NULL"
+    ).fetchall()
+    for row in no_id_blurry:
+        jp = Path(row["jpg_path"])
+        if not jp.exists():
+            continue
+        if _dim(jp) >= MIN_GOOD:
+            continue
+        src = base_art.get(row["base_title"])
+        if src and src != jp:
+            try:
+                shutil.copy2(str(src), str(jp))
+                copied_via_base += 1
+            except Exception:
+                skipped += 1
+        else:
+            skipped += 1
+
+    return {
+        "ok": True,
+        "copied_via_suno_id": copied_via_suno,
+        "copied_via_base_title": copied_via_base,
+        "skipped": skipped,
+    }
+
+
+@app.post("/api/clear-blurry-art")
+def clear_blurry_art(threshold: int = Query(512)):
+    """Delete jpg files smaller than threshold px and null out jpg_path in the DB.
+    Frontend will show a gradient placeholder instead.
+    """
+    try:
+        from PIL import Image as _Image
+        def _dim(p):
+            try:
+                w, h = _Image.open(p).size
+                return min(w, h)
+            except Exception:
+                return 9999
+    except ImportError:
+        return {"ok": False, "error": "Pillow not installed"}
+
+    rows = _conn.execute(
+        "SELECT id, jpg_path FROM songs WHERE jpg_path IS NOT NULL"
+    ).fetchall()
+
+    deleted = 0
+    skipped = 0
+    for row in rows:
+        p = Path(row["jpg_path"])
+        if not p.exists():
+            continue
+        if _dim(p) >= threshold:
+            skipped += 1
+            continue
+        try:
+            p.unlink()
+        except Exception:
+            pass
+        with _db_lock:
+            _conn.execute("UPDATE songs SET jpg_path=NULL WHERE id=?", (row["id"],))
+        deleted += 1
+
+    with _db_lock:
+        _conn.commit()
+
+    return {"ok": True, "deleted": deleted, "skipped": skipped, "threshold_px": threshold}
 
 
 @app.get("/api/stats")

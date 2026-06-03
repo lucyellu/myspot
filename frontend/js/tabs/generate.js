@@ -5,6 +5,8 @@ import { refreshPlayerVisual } from "../views/watch.js";
 // Default order: free options first (Gemini text 250/day, Pollinations unlimited).
 const PROMPT_MODELS = [
   { id: "gemini-text", label: "Gemini Flash (250/day free)", check: "gemini-text" },
+  { id: "groq",        label: "Groq Llama 3.3 70B (fast)",   check: "groq" },
+  { id: "cerebras",    label: "Cerebras GPT OSS 120B (fast)", check: "cerebras" },
   { id: "deepseek",    label: "DeepSeek (cheap)",         check: "deepseek" },
   { id: "claude",      label: "Claude Sonnet 4.6",        check: "claude" },
 ];

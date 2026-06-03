@@ -1,9 +1,12 @@
-import { api } from "./api.js";
+import { api } from "./api.js?v=lyric-export1";
 import { renderHome } from "./views/home.js";
-import { renderWatch } from "./views/watch.js";
+import { renderWatch } from "./views/watch.js?v=lyric-export1";
 import { renderAssets } from "./views/assets.js";
+import { renderRadio } from "./views/radio.js?v=radio-onehour1";
+import { renderLiveBoards } from "./views/liveBoards.js?v=liveboards2";
 import { fmtAccount, channelColor, debounce, toast } from "./util.js";
 import { bindThemePopover } from "./theme.js";
+import { initPersistentPlayer } from "./player.js?v=radio-longform1";
 
 async function loadChannels() {
   const list = document.getElementById("channel-list");
@@ -115,6 +118,9 @@ async function route() {
   } else if (parts[0] === "song" && parts[1]) {
     highlightActiveChannel(null);
     await renderWatch(parseInt(parts[1], 10));
+  } else if (parts[0] === "radio") {
+    highlightActiveChannel(null);
+    await renderRadio();
   } else if (parts[0] === "search" && parts[1]) {
     await renderHome({ q: decodeURIComponent(parts[1]) });
   } else if (parts[0] === "tag" && parts[1]) {
@@ -123,6 +129,10 @@ async function route() {
   } else if (parts[0] === "assets") {
     const folder = parts[1] ? decodeURIComponent(parts[1]) : null;
     await renderAssets({ folder });
+  } else if (parts[0] === "live-boards") {
+    highlightActiveChannel(null);
+    const id = parts[1] ? decodeURIComponent(parts.slice(1).join("/")) : null;
+    await renderLiveBoards({ id });
   } else {
     await renderHome();
   }
@@ -150,6 +160,9 @@ function bindGlobal() {
   document.getElementById("btn-menu").onclick = () => {
     document.getElementById("sidedrawer").classList.toggle("hidden");
   };
+  const radioLink = document.getElementById("topbar-radio");
+  if (radioLink) radioLink.onclick = () => { location.hash = "#/radio"; };
+  bindDrawerResize();
   document.getElementById("btn-reindex").onclick = async () => {
     if (!confirm("Re-scan suno_library/ and assets/? Takes ~2 minutes.")) return;
     try {
@@ -186,6 +199,33 @@ function bindGlobal() {
   });
 }
 
+function bindDrawerResize() {
+  const drawer = document.getElementById("sidedrawer");
+  const handle = document.getElementById("drawer-resize");
+  if (!drawer || !handle) return;
+  const saved = localStorage.getItem("myspot.drawer.width");
+  if (saved) document.documentElement.style.setProperty("--drawer-w", `${Math.max(180, Math.min(420, Number(saved)))}px`);
+  handle.onpointerdown = (e) => {
+    e.preventDefault();
+    const startX = e.clientX;
+    const startW = drawer.getBoundingClientRect().width || 240;
+    handle.setPointerCapture(e.pointerId);
+    const move = (ev) => {
+      const w = Math.max(180, Math.min(420, startW + ev.clientX - startX));
+      document.documentElement.style.setProperty("--drawer-w", `${w}px`);
+      localStorage.setItem("myspot.drawer.width", String(Math.round(w)));
+    };
+    const up = () => {
+      handle.removeEventListener("pointermove", move);
+      handle.removeEventListener("pointerup", up);
+      handle.removeEventListener("pointercancel", up);
+    };
+    handle.addEventListener("pointermove", move);
+    handle.addEventListener("pointerup", up);
+    handle.addEventListener("pointercancel", up);
+  };
+}
+
 function bindApiPopover() {
   const btn = document.getElementById("btn-api");
   const pop = document.getElementById("api-pop");
@@ -218,6 +258,7 @@ function bindApiPopover() {
 
 window.addEventListener("hashchange", route);
 window.addEventListener("DOMContentLoaded", async () => {
+  initPersistentPlayer();
   bindGlobal();
   bindHelp();
   bindThemePopover();

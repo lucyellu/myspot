@@ -1,5 +1,6 @@
 import { api, mediaUrl } from "../api.js";
 import { fmtDuration, fmtAccount, channelColor, el, clear } from "../util.js";
+import { playSongNow } from "../player.js";
 
 const PAGE = 60;
 
@@ -147,8 +148,22 @@ export function card(s) {
     else img.addEventListener("load", markLowres, { once: true });
   } else {
     img.removeAttribute("src");
+    const c = channelColor(s.account);
+    thumb.style.background = `linear-gradient(150deg, ${c}3 0%, ${c}9 100%)`;
   }
   img.alt = s.title || "";
+  const quick = el("button", {
+    class: "card-quick-play",
+    type: "button",
+    title: "Play without leaving this view",
+    "aria-label": `Play ${s.title || "song"}`,
+  }, "▶");
+  quick.onclick = (e) => {
+    e.preventDefault();
+    e.stopPropagation();
+    playSongNow(s);
+  };
+  thumb.append(quick);
   if (s.version > 1) verBadge.textContent = `v${s.version}`; else verBadge.remove();
   durBadge.textContent = fmtDuration(s.duration);
   titleEl.textContent = s.title;

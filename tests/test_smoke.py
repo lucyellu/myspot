@@ -212,11 +212,23 @@ def test_indexer_roundtrip():
             import gc; gc.collect()
 
 
+def test_ai_registry():
+    print("[ai registry]")
+    from backend.ai import enhance_prompt, tool_status
+
+    tools = tool_status()
+    check("Groq prompt tool registered", tools.get("groq", {}).get("kind") == "prompt")
+    check("Cerebras prompt tool registered", tools.get("cerebras", {}).get("kind") == "prompt")
+    check("Grok image tool still registered", tools.get("grok", {}).get("kind") == "image")
+    check("unknown prompt model errors", "error" in enhance_prompt("not-a-model", {"title": "X"}))
+
+
 def main():
     test_lyrics_parser()
     test_derivatives()
     test_cache_lookup()
     test_indexer_roundtrip()
+    test_ai_registry()
     print()
     print(f"PASSED: {PASSED}")
     print(f"FAILED: {len(FAILED)}")

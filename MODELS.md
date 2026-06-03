@@ -6,7 +6,7 @@
 
 | Step | Pick | Why |
 | --- | --- | --- |
-| Prompt enhance | **Gemini 2.5 Flash** (250/day free) → **DeepSeek V3** (cheap paid fallback) | free covers most days; DeepSeek is $0.0005/call when free runs out |
+| Prompt enhance | **Gemini 2.5 Flash** (250/day free) → **Groq/Cerebras** (fast keyed fallback) → **DeepSeek V3** (cheap paid fallback) | free covers most days; fast providers light up when configured; DeepSeek is $0.0005/call when free runs out |
 | Image gen | **Pollinations FLUX** (unlimited free) | no key, no quota, FLUX.dev quality |
 | Image gen (premium) | **HuggingFace FLUX-schnell** | 30/mo free on personal account, ~Midjourney v7 tier |
 | Image inspiration (vision) | **Gemini 2.5 Flash + auto-fallback** | free 250/day per model, falls through to lite/2.0 on 503 |
@@ -23,6 +23,8 @@ The 🚀 Auto button uses these defaults automatically.
 | --- | --- | --- | --- | --- |
 | **Gemini 2.5 Flash** | ~$0.0008 | **250 RPD/free** | very good | GEMINI_API_KEY |
 | Gemini 2.0 Flash | ~$0.0002 | 1500 RPD free | good | (auto-fallback) |
+| **Groq Llama 3.3 70B** | varies | account-dependent | very good, very fast | GROQ_API_KEY |
+| **Cerebras GPT OSS 120B** | varies | account-dependent | good, very fast | CEREBRAS_API_KEY |
 | **DeepSeek V3** | ~$0.0005 | none, $5 ≈ 10k calls | very good (creative prose) | DEEPSEEK_API_KEY |
 | DeepSeek Reasoner | ~$0.002 | none | very good (reasoning) | (not wired — overkill for this) |
 | Claude Sonnet 4.6 | ~$0.005 | none | premium | ANTHROPIC_API_KEY |
@@ -102,6 +104,8 @@ myspot doesn't generate music yet — SunoSync downloads what the user generates
 | Service | Where | Notes |
 | --- | --- | --- |
 | Google Gemini | https://aistudio.google.com/apikey | Click project → "Set up billing" needed for Nano Banana |
+| Groq | https://console.groq.com/keys | Uses OpenAI-compatible chat completions |
+| Cerebras | https://cloud.cerebras.ai/ | Uses OpenAI-compatible chat completions |
 | DeepSeek | https://platform.deepseek.com/api_keys | Top up at /usage/balance ($5 minimum) |
 | Anthropic | https://console.anthropic.com/settings/keys | Pay-as-you-go |
 | xAI | https://console.x.ai/ | "API Keys" left nav |
@@ -117,9 +121,10 @@ myspot doesn't generate music yet — SunoSync downloads what the user generates
 
 ### Recommended free+cheap setup
 1. `GEMINI_API_KEY` from AI Studio (free)
-2. `DEEPSEEK_API_KEY` with $5 deposit
-3. (Pollinations active by default)
-4. → 🚀 Auto: Gemini enhances prompt → Pollinations generates 4 images. Total cost: $0.
+2. Optional `GROQ_API_KEY` or `CEREBRAS_API_KEY` for fast prompt enhancement fallbacks
+3. `DEEPSEEK_API_KEY` with $5 deposit
+4. (Pollinations active by default)
+5. → 🚀 Auto: Gemini enhances prompt → Pollinations generates 4 images. Total cost: $0.
 
 ### Premium quality setup
 1. Above three, plus:

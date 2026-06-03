@@ -1,19 +1,18 @@
 @echo off
-title myspot
+title myspot AI Radio
 cd /d "%~dp0"
-git checkout dev >nul 2>&1
 
 echo.
 echo  =========================================
-echo   myspot (dev) - http://127.0.0.1:7777
+echo   myspot AI Radio - http://127.0.0.1:7777/#/radio
 echo  =========================================
 echo.
 echo  Launching browser in 3 seconds...
 echo  Close this window to stop the server.
 echo.
 
-REM Open the browser shortly after uvicorn starts
-start "" /b cmd /c "timeout /t 3 /nobreak >nul && start "" http://127.0.0.1:7777/"
+REM Open the radio interface shortly after the backend starts.
+start "" /b cmd /c "timeout /t 3 /nobreak >nul && start "" http://127.0.0.1:7777/#/radio"
 
 py -3.11 -m backend.app
 if errorlevel 1 (

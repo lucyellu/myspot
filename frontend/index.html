@@ -8,7 +8,7 @@
 <link rel="preconnect" href="https://fonts.googleapis.com" />
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
 <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=VT323&family=Pixelify+Sans:wght@400;500;600;700&family=Inter:wght@400;500;600;700&family=Roboto:wght@400;700&family=Bebas+Neue&family=Playfair+Display:wght@400;700&family=Space+Grotesk:wght@400;700&family=Nunito:wght@400;700&family=Dancing+Script:wght@700&display=swap" />
-<link rel="stylesheet" href="/static/css/app.css" />
+<link rel="stylesheet" href="/static/css/app.css?v=radio-onehour1" />
 <!-- Runtime config: sets window.MYSPOT_API_BASE for static deploys. Optional;
      missing file is fine (same-origin fallback). -->
 <script src="/static/config.js" onerror="this.remove()"></script>
@@ -23,6 +23,7 @@
 <header class="topbar">
   <button class="ico-btn" id="btn-menu" title="Channels">▤</button>
   <a class="brand" href="#/">MYSPOT</a>
+  <a class="topbar-link" id="topbar-radio" href="#/radio">RADIO</a>
   <input id="search" class="search" type="search" placeholder="SEARCH..." />
   <div class="topbar-spacer"></div>
   <span class="stats" id="topbar-stats"></span>
@@ -64,6 +65,10 @@
 <aside class="sidedrawer" id="sidedrawer">
   <details class="drawer-section" id="drawer-smart" open>
     <summary><span class="drawer-section-h">SMART</span><span class="drawer-section-n" id="drawer-smart-n"></span></summary>
+    <div class="channel-list">
+      <a href="#/radio"><span class="count">HOST</span>AI RADIO</a>
+      <a href="#/live-boards"><span class="count">PREVIZ</span>LIVE BOARDS</a>
+    </div>
     <div id="smart-tag-list" class="channel-list"></div>
   </details>
   <details class="drawer-section" id="drawer-channels">
@@ -74,9 +79,29 @@
     <summary><span class="drawer-section-h">FOLDERS</span><span class="drawer-section-n" id="drawer-folders-n"></span></summary>
     <div id="asset-folder-list" class="channel-list"></div>
   </details>
+  <div id="drawer-resize" class="drawer-resize" title="Resize library lane"></div>
 </aside>
 
 <main id="view"></main>
+
+<div id="persistent-player" class="persistent-player" hidden>
+  <button class="pp-art" id="pp-art" type="button" title="Open current song">♫</button>
+  <div class="pp-info">
+    <a id="pp-title" class="pp-title" href="#/"></a>
+    <div id="pp-meta" class="pp-meta"></div>
+  </div>
+  <button class="pp-btn" id="pp-prev" type="button" title="Previous">⏮</button>
+  <button class="pp-btn pp-play" id="pp-play" type="button" title="Play / pause">▶</button>
+  <button class="pp-btn" id="pp-next" type="button" title="Next">⏭</button>
+  <button class="pp-btn pp-stop" id="pp-stop" type="button" title="Stop playback">■</button>
+  <input type="range" class="pp-scrub" id="pp-scrub" min="0" max="1000" value="0" step="1" aria-label="Seek" />
+  <span class="pp-time" id="pp-time">0:00 / 0:00</span>
+  <button class="pp-btn" id="pp-mute" type="button" title="Mute">🔊</button>
+  <input type="range" class="pp-vol" id="pp-vol" min="0" max="100" value="100" step="1" aria-label="Volume" />
+  <button class="pp-btn" id="pp-collapse" type="button" title="Compact player">▾</button>
+  <button class="pp-btn pp-close" id="pp-close" type="button" title="Turn player off">×</button>
+  <audio id="global-audio" preload="metadata"></audio>
+</div>
 
 <template id="tpl-home">
   <section class="home">
@@ -113,46 +138,65 @@
 </template>
 
 <template id="tpl-watch">
-  <section class="watch">
-    <div class="watch-main">
-      <div class="player">
-        <div class="player-stage">
-          <div class="visual" id="visual"></div>
-          <canvas id="halftone" class="halftone-overlay"></canvas>
-          <div class="drop-overlay" id="drop-overlay">DROP TO ADD TO TRACK</div>
-          <div class="lyric-overlay" id="lyric-overlay" hidden></div>
-        </div>
-        <div class="lcd-strip">
-          <span class="lcd-label" id="lcd-status">▶</span>
-          <span class="lcd-time" id="lcd-time-cur">00:00</span>
-          <span class="lcd-sep">/</span>
-          <span class="lcd-time" id="lcd-time-tot">00:00</span>
-          <span class="lcd-spacer"></span>
-          <span class="lcd-label" id="lcd-bpm" hidden></span>
-          <span class="lcd-label" id="lcd-version" hidden></span>
-        </div>
-        <div class="transport" id="transport">
-          <button class="tp-btn" id="tp-prev" type="button" title="Previous (P)">⏮</button>
-          <button class="tp-btn tp-play" id="tp-play" type="button" title="Play / pause (Space)">▶</button>
-          <button class="tp-btn" id="tp-next" type="button" title="Next (N)">⏭</button>
-          <input type="range" class="tp-scrub" id="tp-scrub" min="0" max="1000" value="0" step="1" />
-          <button class="tp-btn tp-mute" id="tp-mute" type="button" title="Mute (M)">🔊</button>
-          <input type="range" class="tp-vol" id="tp-vol" min="0" max="100" value="100" step="1" title="Volume" />
-          <button class="tp-btn tp-karaoke on" id="tp-karaoke" type="button" title="Karaoke lyric overlay">KARA</button>
-        </div>
-        <audio id="audio" preload="metadata"></audio>
+  <section class="watch" id="watch-lanes">
+    <section class="watch-lane lane-stage" data-lane="stage" draggable="true">
+      <div class="lane-head">
+        <button class="lane-collapse" type="button" title="Collapse stage">−</button>
+        <span class="lane-title">STAGE</span>
+        <span class="lane-hint">player · lyrics · track</span>
+        <button class="lane-mode-btn on" id="tp-karaoke" type="button" title="Karaoke lyric overlay">KARAOKE</button>
       </div>
-      <div class="lyric-strip-host" id="lyric-strip-host"></div>
-      <div class="track-strip" id="track-strip">
-        <div class="track-empty">DROP IMAGES / VIDEOS / ASSETS HERE TO BUILD YOUR TRACK</div>
-      </div>
-      <div class="shelves">
-        <div class="shelf" id="media-tray">
-          <div class="shelf-head">
-            <span class="shelf-title">MEDIA</span>
-            <select id="media-tray-folder" class="media-tray-folder"></select>
-            <span class="media-tray-path muted small" id="media-tray-path"></span>
+      <div class="lane-body watch-main">
+        <div class="player">
+          <div class="player-stage">
+            <div class="visual" id="visual"></div>
+            <canvas id="halftone" class="halftone-overlay"></canvas>
+            <div class="drop-overlay" id="drop-overlay">DROP TO ADD TO TRACK</div>
+            <div class="lyric-overlay" id="lyric-overlay" hidden></div>
           </div>
+          <div class="transport" id="transport">
+            <span class="lcd-label" id="lcd-status">▶</span>
+            <button class="tp-btn" id="tp-prev" type="button" title="Previous (P)">⏮</button>
+            <button class="tp-btn tp-play" id="tp-play" type="button" title="Play / pause (Space)">▶</button>
+            <button class="tp-btn" id="tp-next" type="button" title="Next (N)">⏭</button>
+            <input type="range" class="tp-scrub" id="tp-scrub" min="0" max="1000" value="0" step="1" />
+            <span class="lcd-time" id="lcd-time-cur">00:00</span>
+            <span class="lcd-sep">/</span>
+            <span class="lcd-time" id="lcd-time-tot">00:00</span>
+            <span class="lcd-label" id="lcd-bpm" hidden></span>
+            <span class="lcd-label" id="lcd-version" hidden></span>
+            <button class="tp-btn tp-mute" id="tp-mute" type="button" title="Mute (M)">🔊</button>
+            <input type="range" class="tp-vol" id="tp-vol" min="0" max="100" value="100" step="1" title="Volume" />
+          </div>
+        </div>
+        <div class="lyric-strip-host" id="lyric-strip-host"></div>
+        <div class="track-strip" id="track-strip">
+          <div class="track-empty">DROP IMAGES / VIDEOS / ASSETS HERE TO BUILD YOUR TRACK</div>
+        </div>
+        <div class="meta">
+          <h1 id="song-title"></h1>
+          <div class="meta-row">
+            <a class="chip" id="meta-account"></a>
+            <span class="chip ver" id="meta-version" hidden></span>
+            <span class="chip" id="meta-duration"></span>
+            <span class="chip" id="meta-bpm" hidden></span>
+            <span class="chip" id="meta-date" hidden></span>
+            <button class="chip-btn" id="btn-like" type="button" title="Like (1 to toggle)">♡</button>
+          </div>
+          <div class="genre" id="meta-genre"></div>
+        </div>
+      </div>
+    </section>
+    <div class="lane-resizer" data-resize-before="stage" data-resize-after="media" title="Resize lanes"></div>
+    <section class="watch-lane lane-media" data-lane="media" draggable="true">
+      <div class="lane-head">
+        <button class="lane-collapse" type="button" title="Collapse media">−</button>
+        <span class="lane-title">MEDIA</span>
+        <select id="media-tray-folder" class="media-tray-folder" title="Media folder"></select>
+        <span class="media-tray-path lane-hint" id="media-tray-path"></span>
+      </div>
+      <div class="lane-body shelves">
+        <div class="shelf" id="media-tray">
           <div class="media-tray-body">
             <div id="tray-bulk-bar" class="tray-bulk-bar" hidden>
               <span class="tray-bulk-count"></span>
@@ -171,31 +215,28 @@
           <div class="up-next" id="up-next"></div>
         </div>
       </div>
-      <div class="meta">
-        <h1 id="song-title"></h1>
-        <div class="meta-row">
-          <a class="chip" id="meta-account"></a>
-          <span class="chip ver" id="meta-version" hidden></span>
-          <span class="chip" id="meta-duration"></span>
-          <span class="chip" id="meta-bpm" hidden></span>
-          <span class="chip" id="meta-date" hidden></span>
-          <button class="chip-btn" id="btn-like" type="button" title="Like (1 to toggle)">♡</button>
-        </div>
-        <div class="genre" id="meta-genre"></div>
+    </section>
+    <div class="lane-resizer" data-resize-before="media" data-resize-after="studio" title="Resize lanes"></div>
+    <aside class="watch-lane lane-studio sidepanel" data-lane="studio" draggable="true">
+      <div class="lane-head">
+        <button class="lane-collapse" type="button" title="Collapse studio">−</button>
+        <span class="lane-title">STUDIO</span>
+        <span class="lane-hint">generate · lyrics · design</span>
       </div>
-    </div>
-    <aside class="sidepanel">
-      <nav class="tabs fm-dial" id="tabs">
-        <div class="fm-tick">
-          <button data-tab="generate" class="active"><span class="fm-freq" data-count="generate">0</span><span class="fm-name">GENERATE</span></button>
-          <button data-tab="lyrics"><span class="fm-freq" data-count="lyrics">0</span><span class="fm-name">LYRICS</span></button>
-          <button data-tab="design"><span class="fm-freq" data-count="design">·</span><span class="fm-name">DESIGN</span></button>
-          <button data-tab="sources"><span class="fm-freq" data-count="sources">0</span><span class="fm-name">SOURCES</span></button>
-          <button data-tab="prompts"><span class="fm-freq" data-count="prompts">0</span><span class="fm-name">PROMPTS</span></button>
-          <button data-tab="batch"><span class="fm-freq" data-count="batch">0</span><span class="fm-name">BATCH</span></button>
-        </div>
-      </nav>
-      <div class="tab-body" id="tab-body"></div>
+      <div class="lane-body">
+        <nav class="tabs fm-dial" id="tabs">
+          <div class="fm-tick">
+            <button data-tab="dj"><span class="fm-freq" data-count="dj">ON</span><span class="fm-name">DJ</span></button>
+            <button data-tab="generate" class="active"><span class="fm-freq" data-count="generate">0</span><span class="fm-name">GENERATE</span></button>
+            <button data-tab="lyrics"><span class="fm-freq" data-count="lyrics">0</span><span class="fm-name">LYRICS</span></button>
+            <button data-tab="design"><span class="fm-freq" data-count="design">·</span><span class="fm-name">DESIGN</span></button>
+            <button data-tab="sources"><span class="fm-freq" data-count="sources">0</span><span class="fm-name">SOURCES</span></button>
+            <button data-tab="prompts"><span class="fm-freq" data-count="prompts">0</span><span class="fm-name">PROMPTS</span></button>
+            <button data-tab="batch"><span class="fm-freq" data-count="batch">0</span><span class="fm-name">BATCH</span></button>
+          </div>
+        </nav>
+        <div class="tab-body" id="tab-body"></div>
+      </div>
     </aside>
   </section>
 </template>
@@ -226,7 +267,7 @@
       <tr><td><kbd>M</kbd></td><td>mute</td></tr>
       <tr><td><kbd>N</kbd></td><td>next</td></tr>
       <tr><td><kbd>P</kbd></td><td>previous</td></tr>
-      <tr><td><kbd>1</kbd>-<kbd>6</kbd></td><td>switch tab</td></tr>
+      <tr><td><kbd>1</kbd>-<kbd>7</kbd></td><td>switch tab</td></tr>
       <tr><td><kbd>/</kbd></td><td>focus search</td></tr>
       <tr><td><kbd>?</kbd></td><td>this help</td></tr>
       <tr><td><kbd>ESC</kbd></td><td>close</td></tr>
@@ -235,6 +276,6 @@
   </div>
 </div>
 
-<script type="module" src="/static/js/main.js"></script>
+<script type="module" src="/static/js/main.js?v=lyric-export1"></script>
 </body>
 </html>
