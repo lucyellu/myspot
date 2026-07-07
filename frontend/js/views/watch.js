@@ -3,7 +3,7 @@ import { fmtDuration, fmtAccount, el, clear, toast, channelColor } from "../util
 import { renderTab, currentTab, setSong } from "../sidepanel.js?v=lyric-export1";
 import { attachHalftone } from "../components/halftone.js";
 import { applyDesignSettings } from "../tabs/design.js";
-import { loadPlayerSong, setPlayerContext, queueAutoplayForRoute, getAudio } from "../player.js";
+import { loadPlayerSong, setPlayerContext, queueAutoplayForRoute, getAudio } from "../player.js?v=radio-longform1";
 
 let currentAudio = null;
 let _related = [];

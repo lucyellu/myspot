@@ -63,6 +63,17 @@ def index_suno_library(conn, cache: SunoSyncCache, meta_db: SunoMetaDB | None = 
         row["mp3_path"]: row["id"]
         for row in conn.execute("SELECT id, mp3_path FROM songs")
     }
+    # Also index by suno_id and by (account, base_title) so hold-path songs
+    # get UPDATED (not duplicated) when the same song is found at a new L: location.
+    existing_by_suno = {}
+    existing_by_title = {}  # key: (account, base_title) → id
+    for row in conn.execute("SELECT id, suno_id, account, base_title FROM songs"):
+        sid = row["suno_id"]
+        if sid and sid not in existing_by_suno:
+            existing_by_suno[sid] = row["id"]
+        tkey = (row["account"], row["base_title"] or "")
+        if tkey not in existing_by_title:
+            existing_by_title[tkey] = row["id"]
 
     with tx(conn):
         for account_dir in sorted(p for p in SUNO_LIBRARY.iterdir() if p.is_dir()):
@@ -144,6 +155,36 @@ def index_suno_library(conn, cache: SunoSyncCache, meta_db: SunoMetaDB | None = 
                            WHERE id=?""",
                         fields + (song_id,),
                     )
+                    updated += 1
+                elif suno_id and suno_id in existing_by_suno:
+                    song_id = existing_by_suno[suno_id]
+                    conn.execute(
+                        """UPDATE songs SET
+                            suno_id=?, title=?, base_title=?, version=?, artist=?,
+                            account=?, genre=?, bpm=?, prompt=?, duration=?,
+                            mp3_path=?, jpg_path=?, txt_path=?, wav_path=?,
+                            mid_path=?, suno_date=?,
+                            suno_play_count=?, suno_upvote_count=?, suno_is_liked=?,
+                            suno_model=?, suno_style=?, suno_video_url=?
+                           WHERE id=?""",
+                        fields + (song_id,),
+                    )
+                    existing_paths[mp3_path_str] = song_id
+                    updated += 1
+                elif (account, base_title) in existing_by_title:
+                    song_id = existing_by_title[(account, base_title)]
+                    conn.execute(
+                        """UPDATE songs SET
+                            suno_id=?, title=?, base_title=?, version=?, artist=?,
+                            account=?, genre=?, bpm=?, prompt=?, duration=?,
+                            mp3_path=?, jpg_path=?, txt_path=?, wav_path=?,
+                            mid_path=?, suno_date=?,
+                            suno_play_count=?, suno_upvote_count=?, suno_is_liked=?,
+                            suno_model=?, suno_style=?, suno_video_url=?
+                           WHERE id=?""",
+                        fields + (song_id,),
+                    )
+                    existing_paths[mp3_path_str] = song_id
                     updated += 1
                 else:
                     cur = conn.execute(

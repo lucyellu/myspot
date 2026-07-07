@@ -1102,6 +1102,99 @@ def reload_env_endpoint():
     return {"ok": True, "loaded_keys": sorted(cache.keys())}
 
 
+@app.get("/api/settings")
+def get_settings():
+    """Return current directory configuration."""
+    from .config import ENV_FILE, SUNO_LIBRARY, SUNO_META_DB, ASSETS_DIR
+    return {
+        "sunolibrary": str(SUNO_LIBRARY),
+        "sunometadb": str(SUNO_META_DB),
+        "assetsdir": str(ASSETS_DIR),
+        "envfile": str(ENV_FILE),
+    }
+
+
+@app.post("/api/settings")
+def update_settings(payload: dict = Body(...)):
+    """Update directory paths in .env file. Triggers reindex on library change."""
+    from .config import ENV_FILE, SUNO_LIBRARY
+    updates = {}
+    for key in ("sunolibrary", "sunometadb", "assetsdir"):
+        if key in payload and payload[key]:
+            updates[key] = payload[key]
+
+    if not updates:
+        return {"ok": False, "error": "no valid keys to update"}
+
+    # Read current .env
+    lines = []
+    if ENV_FILE.exists():
+        lines = ENV_FILE.read_text(encoding="utf-8").splitlines()
+
+    env_key_map = {
+        "sunolibrary": "SUNO_LIBRARY",
+        "sunometadb": "SUNO_META_DB",
+        "assetsdir": "ASSETS_DIR",
+    }
+
+    old_library = str(SUNO_LIBRARY)
+    new_lines = []
+    updated_keys = set()
+    for line in lines:
+        stripped = line.strip()
+        replaced = False
+        for json_key, env_key in env_key_map.items():
+            if json_key in updates and (
+                stripped.startswith(f"{env_key}=") or
+                stripped.startswith(f"export {env_key}=")
+            ):
+                prefix = "export " if stripped.startswith("export ") else ""
+                new_lines.append(f"{prefix}{env_key}={updates[json_key]}")
+                updated_keys.add(json_key)
+                replaced = True
+                break
+        if not replaced:
+            new_lines.append(line)
+
+    # Append any keys not found in existing file
+    for json_key, env_key in env_key_map.items():
+        if json_key in updates and json_key not in updated_keys:
+            new_lines.append(f"{env_key}={updates[json_key]}")
+
+    ENV_FILE.write_text("\n".join(new_lines) + "\n", encoding="utf-8")
+    reload_env()
+
+    # Trigger reindex if library changed
+    new_library = updates.get("sunolibrary", old_library)
+    reindex_triggered = False
+    if new_library != old_library:
+        threading.Thread(target=_reindex_runner, daemon=True).start()
+        reindex_triggered = True
+
+    return {
+        "ok": True,
+        "updated": list(updated_keys),
+        "reindex_triggered": reindex_triggered,
+    }
+
+
+@app.post("/api/upload-test-mp3")
+async def upload_test_mp3(file: UploadFile = File(...)):
+    """Upload a test MP3 to the SUNO_LIBRARY root for quick testing."""
+    if not file.filename or not file.filename.lower().endswith(".mp3"):
+        raise HTTPException(400, "Only .mp3 files are accepted")
+    import shutil
+    dest = SUNO_LIBRARY / "test" / file.filename
+    dest.parent.mkdir(parents=True, exist_ok=True)
+    with open(dest, "wb") as f:
+        shutil.copyfileobj(file.file, f)
+    # Trigger quick reindex to pick up the new file
+    if not _reindex_state["running"]:
+        threading.Thread(target=_reindex_runner, daemon=True).start()
+    return {"ok": True, "path": str(dest), "filename": file.filename}
+
+
+
 @app.post("/api/songs/{song_id}/enhance-prompt")
 def api_enhance_prompt(song_id: int, payload: dict = Body({})):
     song = _song_for_ai(song_id)
@@ -1630,17 +1723,28 @@ def _under(p: str, allowed_dirs: list[Path]) -> bool:
         return False
     for d in allowed_dirs:
         try:
-            rp.relative_to(d.resolve())
+            resolved_dir = d.resolve()
+            # Check if path is under allowed directory (case-insensitive on Windows)
+            if str(rp).lower().startswith(str(resolved_dir).lower()):
+                return True
+            # Also try the original relative_to check as fallback
+            rp.relative_to(resolved_dir)
             return True
         except ValueError:
             continue
     return False
 
 
-_MEDIA_ROOTS = [SUNO_LIBRARY, ASSETS_DIR, GENS_DIR, EXPORTS_DIR]
+_MEDIA_ROOTS = [SUNO_LIBRARY, ASSETS_DIR, GENS_DIR, EXPORTS_DIR,
+    # Include both L: and hold libraries so songs work during/after migration
+    Path("L:/Media/Audio/suno_library"),
+    Path("C:/Users/lucyl/Desktop/hold/projects/suno_library"),
+]
 _LIVE_REF_ROOTS = _MEDIA_ROOTS + [
     Path("L:/Media/Audio/suno/albumart"),
     Path("L:/Media/Audio/suno_library"),
+    # Add subdirectories of SUNO_LIBRARY to ensure image access
+    *(SUNO_LIBRARY.glob("*/") if SUNO_LIBRARY.exists() else []),
 ]
 
 
@@ -2022,7 +2126,7 @@ def index():
             {"error": "frontend not built", "hint": "frontend/index.html missing"},
             status_code=503,
         )
-    return FileResponse(idx)
+    return FileResponse(idx, headers={"Cache-Control": "no-cache, no-store, must-revalidate"})
 
 
 @app.on_event("startup")
