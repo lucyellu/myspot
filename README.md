@@ -24,11 +24,12 @@ python -m backend.library    # one-shot full reindex (~110 sec for 5,700+ tracks
 python -m backend.app        # serves http://127.0.0.1:7777/
 
 # Convenience:
-start.bat                    # same as python -m backend.app
+start.bat                    # opens the main app and also prints the phone/LAN URL
+start.bat "#/radio"          # same app, opens the AI Radio route
 reindex.bat                  # same as python -m backend.library
 ```
 
-Open http://127.0.0.1:7777/ — you should see your channels in the left drawer and a grid of recent tracks. Click any track to open the watch page.
+Open http://127.0.0.1:7777/ — you should see your channels in the left drawer and a grid of recent tracks. Click any track to open the watch page. The regular launcher binds to `0.0.0.0`, so the same server also works from a phone on the same network using the LAN URL printed in the launch window.
 
 ## Verify it's running
 
