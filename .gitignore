@@ -36,3 +36,8 @@ Thumbs.db
 # Each user populates this themselves. Repo keeps a .gitkeep so the dir exists.
 assets/*
 !assets/.gitkeep
+
+# Runtime logs, tunnel tokens, and local backups — never pushed.
+data/public/
+data/backup_*/
+data/.fuse_hidden*

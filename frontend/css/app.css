@@ -1116,7 +1116,8 @@ main {
 }
 .grid.list-mode .card-version,
 .grid.list-mode .card-duration,
-.grid.list-mode .card-liked { display: none; }
+.grid.list-mode .card-liked,
+.grid.list-mode .card-video-badge { display: none; }
 .grid.list-mode .card-body {
   display: contents;
 }
@@ -1618,6 +1619,12 @@ main {
   background: var(--ink); color: var(--accent-2);
   font-size: 10px;
 }
+.card-video-badge {
+  position: absolute; top: 3px; left: 3px;
+  font-family: var(--font-mono); font-size: 9px; letter-spacing: 0.04em;
+  color: var(--accent-2); background: var(--ink);
+  padding: 1px 4px; border-radius: 3px; border: 1px solid var(--ink);
+}
 .card-body { padding: 0 2px; }
 .card-title {
   display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical;
@@ -1740,20 +1747,28 @@ main {
 }
 .lane-resizer {
   width: 10px;
+  align-self: stretch;
   min-height: 220px;
   cursor: col-resize;
   position: relative;
+  touch-action: none;
 }
+/* A visible grip pill so it's obvious the lanes can be dragged wider/narrower. */
 .lane-resizer::after {
   content: "";
-  position: absolute; top: 12px; bottom: 12px; left: 4px;
-  border-left: 2px dashed var(--ink);
-  opacity: 0.35;
+  position: absolute; top: 50%; left: 50%;
+  transform: translate(-50%, -50%);
+  width: 4px; height: 46px;
+  border-radius: 4px;
+  background: var(--ink);
+  opacity: 0.4;
+  transition: background 0.15s, opacity 0.15s, height 0.15s;
 }
 .lane-resizer:hover::after,
 .lane-resizer.resizing::after {
-  border-left-color: var(--accent);
+  background: var(--accent);
   opacity: 1;
+  height: 84px;
 }
 .watch-lane.collapsed {
   min-width: 44px;
@@ -1984,155 +1999,82 @@ main {
 .tp-scrub { flex: 1; min-width: 0; accent-color: var(--accent); height: 4px; }
 .tp-vol { width: 70px; flex-shrink: 0; accent-color: var(--accent); height: 4px; }
 
-/* Karaoke overlay — placement is set by the Design tab.
-   Defaults below; placement classes override left/right/top/bottom. */
+/* ── Karaoke lyric overlay — simple blur-morph text effect ──────────────
+   Shows ONE lyric line at a time. Each new line morphs in (blur -> sharp)
+   while the previous line morphs out (sharp -> blur), echoing the CSS-only
+   morph effect. Font / size / colour / placement come from the Design tab. */
 .lyric-overlay {
-  display: flex; flex-direction: column; align-items: center; gap: 6px;
+  display: grid;
+  place-items: center;
+  min-height: 1.5em;
   pointer-events: none;
   text-align: center;
   z-index: 5;
-  /* Heavy text-shadow stack so any color reads on any artwork. */
-  text-shadow:
-    -1px -1px 0 rgba(0,0,0,0.9),
-     1px -1px 0 rgba(0,0,0,0.9),
-    -1px  1px 0 rgba(0,0,0,0.9),
-     1px  1px 0 rgba(0,0,0,0.9),
-    0 2px 4px rgba(0,0,0,0.95),
-    0 0 14px rgba(0,0,0,0.6);
+  --lyric-font: var(--font-grotesk);
+  --lyric-size: 40px;
+  --lyric-color: #ffffff;
 }
 .lyric-overlay.placement-overlay-bottom {
-  position: absolute; left: 4%; right: 4%; bottom: 6%;
+  position: absolute; left: 4%; right: 4%; bottom: 7%;
 }
 .lyric-overlay.placement-overlay-top {
-  position: absolute; left: 4%; right: 4%; top: 6%;
+  position: absolute; left: 4%; right: 4%; top: 7%;
 }
 .lyric-overlay.placement-below {
   position: relative;
   margin: 8px 12px 0;
-  padding: 12px 14px;
+  padding: 14px;
+  min-height: 3em;
   background: var(--lcd-bg);
   border: 2px solid var(--ink);
   border-radius: var(--radius-sm);
-  /* Below-video doesn't need to fight artwork, so drop the heavy shadows. */
-  text-shadow: none;
 }
-
-/* Optional dark scrim band behind the lines for max legibility on busy art.
-   Only kicks in for overlay placements. */
-.lyric-overlay.fx-scrim.placement-overlay-bottom,
-.lyric-overlay.fx-scrim.placement-overlay-top {
-  background:
-    linear-gradient(to bottom,
-      transparent 0%,
-      rgba(0,0,0,0.55) 30%,
-      rgba(0,0,0,0.55) 70%,
-      transparent 100%);
-  padding: 10px 14px;
-  border-radius: 6px;
-}
-
 .lyric-strip-host {
-  /* When placement = "below", the design tab moves the overlay into here. */
+  /* When placement = "below", the Design tab moves the overlay in here. */
   display: contents;
 }
 .lyric-overlay[hidden] { display: none; }
-/* The overlay reads custom props set by the Design tab — defaults below kick
-   in if the tab hasn't run yet. Per-line `--fill-progress` (0..1) drives the
-   karaoke text-fill animation on .fx-fill. */
-.lyric-overlay {
-  --lyric-font: var(--font-display);
-  --lyric-size: 32px;
-  --lyric-color: var(--accent);
-  --lyric-fill-a: var(--accent);
-  --lyric-fill-b: var(--accent-2);
-  --fill-progress: 0;
-}
+
+/* Every line shares the same grid cell, so the incoming and outgoing lines
+   overlap and cross-fade in place — the blur + scale is the whole "morph". */
 .lyric-line-current {
-  position: relative;
+  grid-area: 1 / 1;
+  max-width: 94%;
+  margin: 0 auto;
   font-family: var(--lyric-font);
-  font-size: var(--lyric-size, 32px);
+  font-size: var(--lyric-size, 40px);
   font-weight: 700;
-  color: var(--lyric-color);
-  letter-spacing: 0.02em;
   line-height: 1.15;
+  letter-spacing: 0.02em;
+  color: var(--lyric-color);
+  white-space: pre-wrap;
+  transform-origin: center;
+  /* Legibility on any artwork — baked in (replaces the old scrim toggle). */
+  text-shadow:
+    0 2px 4px rgba(0,0,0,0.95),
+    0 0 16px rgba(0,0,0,0.55),
+    -1px -1px 0 rgba(0,0,0,0.5),
+     1px  1px 0 rgba(0,0,0,0.5);
+  will-change: opacity, filter, transform;
 }
-.lyric-line-next {
-  font-family: var(--font-body);
-  /* Next-line is always smaller — half of current, with sane bounds. */
-  font-size: clamp(11px, calc(var(--lyric-size, 32px) * 0.45), 18px);
-  color: hsla(var(--hue), 30%, 78%, 0.78);
-  letter-spacing: 0.01em;
-}
+.placement-below .lyric-line-current { text-shadow: none; }
 
-/* fx-fill: gradient overlays the active line, masked by the line's silhouette
-   via background-clip: text. The gradient hard-stop at --fill-progress
-   produces the karaoke-fill effect. Implemented as a stacked element so we
-   keep the dark text-shadow + outline below. */
-.lyric-overlay.fx-fill .lyric-line-current,
-.design-preview-line.fx-fill {
-  background-image: linear-gradient(
-    to right,
-    var(--lyric-fill-b) 0,
-    var(--lyric-fill-b) calc(var(--fill-progress, 0) * 100%),
-    var(--lyric-fill-a) calc(var(--fill-progress, 0) * 100%),
-    var(--lyric-fill-a) 100%
-  );
-  -webkit-background-clip: text;
-          background-clip: text;
-  color: transparent;
-  -webkit-text-fill-color: transparent;
-  transition: --fill-progress 0.05s linear;
-}
-.design-preview-line.fx-fill { animation: design-preview-fill 2.4s ease-in-out infinite alternate; }
-@keyframes design-preview-fill {
-  from { --fill-progress: 0; }
-  to   { --fill-progress: 1; }
-}
-@property --fill-progress {
-  syntax: "<number>";
-  inherits: true;
-  initial-value: 0;
-}
+.lyric-line-current.morph-in  { animation: lyric-morph-in  0.75s cubic-bezier(0.2, 0.7, 0.2, 1) both; }
+.lyric-line-current.morph-out { animation: lyric-morph-out 0.6s ease-in both; }
 
-/* fx-glow: hue-tinted halo behind active line. */
-.lyric-overlay.fx-glow .lyric-line-current,
-.design-preview-line.fx-glow {
-  filter: drop-shadow(0 0 14px hsla(var(--hue), 70%, 55%, 0.55));
+@keyframes lyric-morph-in {
+  0%   { opacity: 0; filter: blur(18px); transform: scale(0.86); }
+  55%  { opacity: 1; filter: blur(0);    transform: scale(1); }
+  100% { opacity: 1; filter: blur(0);    transform: scale(1); }
 }
-
-/* fx-outline: hollow text effect on the active line. */
-.lyric-overlay.fx-outline .lyric-line-current,
-.design-preview-line.fx-outline {
-  -webkit-text-stroke: 2px var(--lyric-color);
-  -webkit-text-fill-color: transparent;
-  background: none;
-  color: transparent;
+@keyframes lyric-morph-out {
+  0%   { opacity: 1; filter: blur(0);    transform: scale(1); }
+  100% { opacity: 0; filter: blur(18px); transform: scale(1.12); }
 }
-
-/* fx-bounce: tiny scale pulse when a new line lands. */
-.lyric-overlay.fx-bounce .lyric-line-current,
-.design-preview-line.fx-bounce {
-  animation: lyric-bounce 0.45s ease-out;
+@media (prefers-reduced-motion: reduce) {
+  .lyric-line-current.morph-in,
+  .lyric-line-current.morph-out { animation-duration: 0.01ms; }
 }
-@keyframes lyric-bounce {
-  0%   { transform: scale(0.92); opacity: 0.6; }
-  60%  { transform: scale(1.06); opacity: 1; }
-  100% { transform: scale(1);    opacity: 1; }
-}
-
-/* ── Paragraph lyric mode ── */
-.lyric-overlay.para-mode {
-  gap: 2px;
-}
-.lyric-line-para {
-  font-family: var(--lyric-font);
-  font-size: clamp(10px, calc(var(--lyric-size, 32px) * 0.5), 18px);
-  color: hsla(var(--hue), 25%, 75%, 0.48);
-  line-height: 1.35;
-  letter-spacing: 0.01em;
-  transition: color .25s;
-}
-.lyric-line-para.past { opacity: 0.28; }
 
 /* ── Design tab UI ── */
 .design-color-row { margin-bottom: 8px; }
@@ -2200,9 +2142,6 @@ main {
   display: flex; align-items: center; justify-content: center;
 }
 .design-preview-line {
-  --lyric-fill-a: var(--accent);
-  --lyric-fill-b: var(--accent-2);
-  --fill-progress: 0;
   font-size: clamp(18px, 2.4vw, 26px);
   font-weight: 700;
   color: var(--accent);
@@ -3257,13 +3196,85 @@ html[data-theme="dark"] {
 .api-url-input {
   width: 100%; padding: 6px 8px; box-sizing: border-box;
   border: 2px solid var(--ink); border-radius: var(--radius-sm);
-  background: var(--panel); color: var(--ink);
+  /* --ink is near-black and so is --panel, so the old pairing rendered typed
+     text invisible. Text on the dark "tape deck" panel is --accent app-wide. */
+  background: var(--panel); color: var(--accent);
   font-family: var(--font-mono); font-size: 12px;
   margin-bottom: 6px;
 }
+.api-url-input::placeholder { color: var(--accent); opacity: 0.45; }
 .api-pop .muted { font-size: 11px; opacity: 0.7; margin-bottom: 2px; }
 .api-pop .actions { display: flex; gap: 6px; margin-top: 10px; }
 .api-pop .actions button { flex: 1; }
+.api-dir-field { display: flex; align-items: center; gap: 6px; margin-bottom: 2px; }
+.api-dir-label { font-size: 11px; width: 52px; flex-shrink: 0; color: var(--muted); }
+.api-dir-field .api-url-input { margin-bottom: 0; }
+.api-dir-help {
+  font-size: 10px; color: var(--muted); opacity: 0.75;
+  margin: 0 0 10px 58px; line-height: 1.4;
+}
+.api-dir-status { display: block; font-size: 10px; opacity: 1; font-weight: 600; }
+.api-dir-browse {
+  flex-shrink: 0; padding: 2px 8px; line-height: 1.4;
+  font-size: 13px; cursor: pointer;
+}
+/* The popover sits on the light sage panel, so these need dark inks to read —
+   a bright green/red washes out against it. */
+.api-dir-status.ok { color: #1f6b3f; }
+.api-dir-status.bad { color: #a3231a; }
+.api-pop .small.bad { color: #a3231a; opacity: 1; font-weight: 600; }
+#api-envfile { margin-top: 8px; font-size: 10px; }
+
+/* ---- folder picker ---- */
+.fs-picker {
+  position: fixed; inset: 0; z-index: 200;
+  background: rgba(0, 0, 0, 0.55);
+  display: flex; align-items: center; justify-content: center;
+  padding: 24px;
+}
+.fs-picker[hidden] { display: none; }
+.fs-picker-box {
+  background: var(--bg-2); color: var(--ink);
+  border: 2px solid var(--ink); border-radius: var(--radius);
+  box-shadow: 0 6px 0 var(--ink), 0 10px 24px var(--shadow);
+  width: min(560px, 100%); max-height: min(70vh, 620px);
+  display: flex; flex-direction: column;
+  font-family: var(--font-mono); font-size: 13px; letter-spacing: 0.04em;
+}
+.fs-picker-head {
+  display: flex; align-items: center; justify-content: space-between;
+  padding: 10px 12px; border-bottom: 2px solid var(--ink);
+  font-weight: 700; font-size: 12px;
+}
+.fs-picker-bar { display: flex; gap: 6px; padding: 10px 12px 6px; }
+.fs-picker-bar .api-url-input { margin-bottom: 0; flex: 1; min-width: 0; }
+.fs-picker-bar .btn { flex-shrink: 0; }
+.fs-picker-list {
+  flex: 1; overflow-y: auto; padding: 4px 8px 8px;
+  min-height: 160px;
+}
+.fs-section {
+  font-size: 10px; color: var(--muted); opacity: 0.7;
+  padding: 8px 4px 2px; letter-spacing: 0.1em;
+}
+.fs-row {
+  display: flex; align-items: center; gap: 8px; width: 100%;
+  padding: 5px 6px; background: none; border: 1px solid transparent;
+  border-radius: 4px; color: var(--ink); text-align: left;
+  font-family: inherit; font-size: 12px; cursor: pointer;
+}
+button.fs-row:hover { background: var(--panel-line); border-color: var(--ink-mute); }
+.fs-row.sel { border-color: var(--accent); background: var(--panel-line); }
+.fs-row.muted { color: var(--muted); opacity: 0.7; cursor: default; }
+.fs-row.bad { color: #a3231a; cursor: default; font-weight: 600; }
+.fs-ico { flex-shrink: 0; }
+.fs-name { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.fs-picker-foot {
+  display: flex; align-items: center; justify-content: space-between; gap: 10px;
+  padding: 10px 12px; border-top: 2px solid var(--ink); flex-wrap: wrap;
+}
+.fs-picker-foot .actions { display: flex; gap: 6px; }
+.fs-picker-foot .muted { font-size: 10px; overflow: hidden; text-overflow: ellipsis; }
 
 .deriv-wrap { margin-bottom: 6px; }
 .deriv-info { flex: 1; min-width: 0; }

@@ -3,7 +3,7 @@ from pathlib import Path
 from contextlib import contextmanager
 from .config import DB_PATH
 
-SCHEMA_VERSION = 3
+SCHEMA_VERSION = 6  # 5 was stamped by an old experiment that never shipped; skip past it
 
 SCHEMA = """
 CREATE TABLE IF NOT EXISTS meta (
@@ -23,7 +23,8 @@ CREATE TABLE IF NOT EXISTS songs (
     bpm INTEGER,
     prompt TEXT,
     duration REAL,
-    mp3_path TEXT NOT NULL UNIQUE,
+    mp3_path TEXT UNIQUE,
+    video_path TEXT UNIQUE,
     jpg_path TEXT,
     txt_path TEXT,
     wav_path TEXT,
@@ -208,6 +209,84 @@ def connect() -> sqlite3.Connection:
     return conn
 
 
+def _migrate_v4_video_only_songs(conn: sqlite3.Connection) -> None:
+    """Allow songs with no mp3 (Suno's CDN returns 403 for audio_url on some
+    clips, but a rendered .mp4 is still available) by adding video_path and
+    dropping mp3_path's NOT NULL. SQLite can't ALTER a column's nullability
+    in place, so rebuild the table."""
+    cols = {r[1] for r in conn.execute("PRAGMA table_info(songs)")}
+    if "video_path" not in cols:
+        conn.execute("ALTER TABLE songs ADD COLUMN video_path TEXT")
+
+    mp3_col = next(c for c in conn.execute("PRAGMA table_info(songs)") if c[1] == "mp3_path")
+    if not mp3_col[3]:  # notnull already 0 — nothing left to do
+        return
+
+    all_cols = [c[1] for c in conn.execute("PRAGMA table_info(songs)")]
+    col_list = ", ".join(all_cols)
+    conn.execute("PRAGMA foreign_keys=OFF")
+    # Modern SQLite's ALTER TABLE RENAME rewrites *other* tables' "REFERENCES
+    # songs(...)" clauses to point at the new name — legacy_alter_table=ON
+    # disables that so child tables (lyric_lines, gens, tags, ...) keep
+    # referencing "songs" by name and resolve correctly once it's recreated.
+    conn.execute("PRAGMA legacy_alter_table=ON")
+    conn.execute("BEGIN")
+    try:
+        conn.execute("ALTER TABLE songs RENAME TO songs_v3")
+        # Individual execute() calls, not executescript() — executescript()
+        # implicitly commits any pending transaction first, which would end
+        # the one just started above.
+        conn.execute("""
+            CREATE TABLE songs (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                suno_id TEXT,
+                title TEXT NOT NULL,
+                base_title TEXT NOT NULL,
+                version INTEGER,
+                artist TEXT,
+                account TEXT NOT NULL,
+                genre TEXT,
+                bpm INTEGER,
+                prompt TEXT,
+                duration REAL,
+                mp3_path TEXT UNIQUE,
+                video_path TEXT UNIQUE,
+                jpg_path TEXT,
+                txt_path TEXT,
+                wav_path TEXT,
+                mid_path TEXT,
+                suno_date TEXT,
+                suno_play_count INTEGER,
+                suno_upvote_count INTEGER,
+                suno_is_liked INTEGER,
+                suno_model TEXT,
+                suno_style TEXT,
+                suno_video_url TEXT,
+                mfcc TEXT,
+                liked INTEGER NOT NULL DEFAULT 0,
+                indexed_at TEXT NOT NULL DEFAULT (datetime('now'))
+            )
+        """)
+        conn.execute("CREATE INDEX IF NOT EXISTS idx_songs_account ON songs(account)")
+        conn.execute("CREATE INDEX IF NOT EXISTS idx_songs_base_title ON songs(base_title)")
+        conn.execute("CREATE INDEX IF NOT EXISTS idx_songs_suno_id ON songs(suno_id)")
+        conn.execute("CREATE INDEX IF NOT EXISTS idx_songs_title ON songs(title)")
+        conn.execute("CREATE INDEX IF NOT EXISTS idx_songs_liked ON songs(liked) WHERE liked=1")
+        conn.execute(f"INSERT INTO songs ({col_list}) SELECT {col_list} FROM songs_v3")
+        conn.execute("DROP TABLE songs_v3")
+        conn.execute(
+            "UPDATE sqlite_sequence SET seq=(SELECT COALESCE(MAX(id),0) FROM songs) "
+            "WHERE name='songs'"
+        )
+        conn.execute("COMMIT")
+    except Exception:
+        conn.execute("ROLLBACK")
+        raise
+    finally:
+        conn.execute("PRAGMA legacy_alter_table=OFF")
+        conn.execute("PRAGMA foreign_keys=ON")
+
+
 def init_db() -> sqlite3.Connection:
     conn = connect()
     conn.executescript(SCHEMA)
@@ -238,6 +317,12 @@ def init_db() -> sqlite3.Connection:
                     conn.execute(f"ALTER TABLE songs ADD COLUMN {col} {typ}")
                 except Exception:
                     pass
+        # Not gated on `stored < 4`: this DB's schema_version was already
+        # stamped 5 by an earlier experiment that never shipped, so a
+        # version-gated check would never fire even though mp3_path is
+        # still NOT NULL. The migration checks the actual column state
+        # itself and is a no-op once applied.
+        _migrate_v4_video_only_songs(conn)
         if stored < SCHEMA_VERSION:
             conn.execute(
                 "UPDATE meta SET value=? WHERE key='schema_version'",

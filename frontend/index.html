@@ -8,7 +8,7 @@
 <link rel="preconnect" href="https://fonts.googleapis.com" />
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
 <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=VT323&family=Pixelify+Sans:wght@400;500;600;700&family=Inter:wght@400;500;600;700&family=Roboto:wght@400;700&family=Bebas+Neue&family=Playfair+Display:wght@400;700&family=Space+Grotesk:wght@400;700&family=Nunito:wght@400;700&family=Dancing+Script:wght@700&display=swap" />
-<link rel="stylesheet" href="/static/css/app.css?v=radio-onehour1" />
+<link rel="stylesheet" href="/static/css/app.css?v=morph1" />
 <!-- Runtime config: sets window.MYSPOT_API_BASE for static deploys. Optional;
      missing file is fine (same-origin fallback). -->
 <script src="/static/config.js" onerror="this.remove()"></script>
@@ -37,9 +37,52 @@
   <label class="api-pop-label">BACKEND URL</label>
   <input type="url" id="api-url-input" class="api-url-input" placeholder="https://xxxx.trycloudflare.com" />
   <div class="muted small" id="api-current"></div>
+  <hr style="border-color:var(--panel-line);margin:12px 0">
+  <label class="api-pop-label">LIBRARY FOLDERS</label>
+  <div class="api-dir-field">
+    <span class="api-dir-label">Media</span>
+    <input type="text" id="api-dir-assets" class="api-url-input" placeholder="L:/Media/pinterest" />
+    <button class="btn api-dir-browse" type="button" data-browse="api-dir-assets" title="Choose a folder">📁</button>
+  </div>
+  <div class="api-dir-help">Images &amp; video scanned into the FOLDERS lane. <span id="api-dir-assets-status" class="api-dir-status"></span></div>
+  <div class="api-dir-field">
+    <span class="api-dir-label">Music</span>
+    <input type="text" id="api-dir-library" class="api-url-input" placeholder="L:/Media/Audio/suno_library" />
+    <button class="btn api-dir-browse" type="button" data-browse="api-dir-library" title="Choose a folder">📁</button>
+  </div>
+  <div class="api-dir-help">Root scanned for MP3s (one subfolder per account). <span id="api-dir-library-status" class="api-dir-status"></span></div>
+  <div class="api-dir-field">
+    <span class="api-dir-label">Suno DB</span>
+    <input type="text" id="api-dir-metadb" class="api-url-input" placeholder="C:/.../suno_meta.db" />
+    <button class="btn api-dir-browse" type="button" data-browse="api-dir-metadb" title="Choose a file">📁</button>
+  </div>
+  <div class="api-dir-help">Optional suno_meta.db for extra track metadata. <span id="api-dir-metadb-status" class="api-dir-status"></span></div>
+  <div class="muted small" id="api-settings-msg"></div>
   <div class="actions">
-    <button class="btn" type="button" id="api-save">SAVE &amp; RELOAD</button>
-    <button class="btn" type="button" id="api-clear">CLEAR</button>
+    <button class="btn" type="button" id="api-save">SAVE &amp; RESCAN</button>
+    <button class="btn" type="button" id="api-clear">CLEAR URL</button>
+  </div>
+  <div class="muted small" id="api-envfile"></div>
+</div>
+
+<div id="fs-picker" class="fs-picker" hidden>
+  <div class="fs-picker-box" role="dialog" aria-modal="true" aria-labelledby="fs-picker-title">
+    <div class="fs-picker-head">
+      <span id="fs-picker-title">CHOOSE FOLDER</span>
+      <button class="ico-btn" type="button" id="fs-close" title="Cancel">×</button>
+    </div>
+    <div class="fs-picker-bar">
+      <button class="btn" type="button" id="fs-up" title="Parent folder">↑</button>
+      <input type="text" id="fs-path" class="api-url-input" spellcheck="false" />
+    </div>
+    <div class="fs-picker-list" id="fs-list"></div>
+    <div class="fs-picker-foot">
+      <span class="muted small" id="fs-info"></span>
+      <div class="actions">
+        <button class="btn" type="button" id="fs-cancel">CANCEL</button>
+        <button class="btn" type="button" id="fs-use">USE THIS FOLDER</button>
+      </div>
+    </div>
   </div>
 </div>
 
@@ -234,6 +277,7 @@
       <span class="card-version"></span>
       <span class="card-duration"></span>
       <span class="card-liked" hidden>♥</span>
+      <span class="card-video-badge" hidden title="No mp3 — playing from the video render">mp4</span>
     </a>
     <div class="card-body">
       <a class="card-title"></a>
@@ -262,6 +306,6 @@
   </div>
 </div>
 
-<script type="module" src="/static/js/main.js?v=lyric-export1"></script>
+<script type="module" src="/static/js/main.js?v=morph1"></script>
 </body>
 </html>

@@ -91,7 +91,7 @@ def _path_env(name: str, default: str) -> Path:
     return Path(v.strip()) if v and v.strip() else Path(default)
 
 
-_SUNO_LIBRARY_DEFAULT = r"C:/Users/lucyl/Desktop/suno_library"
+_SUNO_LIBRARY_DEFAULT = r"L:/Media/Audio/suno_library"
 _SUNO_META_DB_DEFAULT = r"C:/Users/lucyl/Desktop/suno-dl/suno_meta.db"
 _ASSETS_DIR_DEFAULT = r"L:/Media/Audio/suno/albumart"
 

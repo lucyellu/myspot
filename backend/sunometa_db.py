@@ -28,7 +28,7 @@ class SunoMetaDB:
         try:
             rows = conn.execute(
                 "SELECT id, play_count, upvote_count, is_liked, "
-                "model_name, style, video_url, local_mp3 FROM songs"
+                "model_name, style, video_url, local_mp3, created_at FROM songs"
             ).fetchall()
         except Exception:
             return False

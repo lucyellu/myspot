@@ -226,24 +226,284 @@ function bindDrawerResize() {
   };
 }
 
+/** Poll until the rescan finishes, reporting indexed-file counts as it goes.
+ *  Reloading mid-scan would show a half-empty library and look like a failure,
+ *  and a big folder takes minutes, so show progress rather than a dead spinner. */
+async function waitForReindex(onProgress, timeoutMs = 15 * 60 * 1000) {
+  const t0 = Date.now();
+  while (Date.now() - t0 < timeoutMs) {
+    await new Promise((r) => setTimeout(r, 2000));
+    try {
+      const status = await fetch("/api/reindex/status").then((r) => r.json());
+      if (!status.running) return true;
+      onProgress?.(status.progress ?? 0, Math.round((Date.now() - t0) / 1000));
+    } catch (e) { return false; }
+  }
+  return false;
+}
+
+// True while the folder picker is on screen. Stays true through the click that
+// dismisses it, so that click can't also collapse the Settings popover beneath.
+let fsPickerOpen = false;
+
+/** Modal folder/file picker over /api/fs/list.
+ *  Resolves to the chosen path, or null if the user cancels. */
+function openFsPicker({ start = "", mode = "dir", title = "CHOOSE FOLDER" } = {}) {
+  const wrap = document.getElementById("fs-picker");
+  const list = document.getElementById("fs-list");
+  const pathInput = document.getElementById("fs-path");
+  const info = document.getElementById("fs-info");
+  const useBtn = document.getElementById("fs-use");
+  const upBtn = document.getElementById("fs-up");
+  if (!wrap) return Promise.resolve(null);
+
+  document.getElementById("fs-picker-title").textContent = title;
+  useBtn.textContent = mode === "file" ? "USE THIS FILE" : "USE THIS FOLDER";
+
+  let here = "";       // folder currently listed
+  let parent = null;
+  let picked = null;   // in file mode, the selected file
+
+  return new Promise((resolve) => {
+    const cleanup = () => {
+      wrap.hidden = true;
+      document.removeEventListener("keydown", onKey);
+      list.innerHTML = "";
+      // Clear on the next tick — the dismissing click is still bubbling.
+      setTimeout(() => { fsPickerOpen = false; }, 0);
+    };
+    const finish = (val) => { cleanup(); resolve(val); };
+    const onKey = (e) => {
+      if (e.key === "Escape") finish(null);
+      if (e.key === "Enter" && document.activeElement === pathInput) load(pathInput.value.trim());
+    };
+
+    async function load(path) {
+      list.innerHTML = `<div class="fs-row muted">Loading…</div>`;
+      picked = null;
+      try {
+        const r = await fetch(`/api/fs/list?path=${encodeURIComponent(path || "")}&mode=${mode}`);
+        if (!r.ok) {
+          const err = await r.json().catch(() => ({}));
+          list.innerHTML = `<div class="fs-row bad">${err.detail || `Cannot open (HTTP ${r.status})`}</div>`;
+          info.textContent = "";
+          return;
+        }
+        const d = await r.json();
+        here = d.path;
+        parent = d.parent;
+        pathInput.value = d.path;
+        upBtn.disabled = !d.path;
+        useBtn.disabled = mode === "dir" ? !d.path : true;
+
+        list.innerHTML = "";
+        if (d.shortcuts?.length) {
+          list.append(sectionLabel("SHORTCUTS"));
+          for (const s of d.shortcuts) list.append(row(s.name, s.path, "dir", "★"));
+          list.append(sectionLabel("DRIVES"));
+        }
+        if (!d.entries.length) {
+          list.append(Object.assign(document.createElement("div"),
+            { className: "fs-row muted", textContent: "(no subfolders)" }));
+        }
+        for (const e of d.entries) {
+          list.append(row(e.name, e.path, e.kind, e.kind === "dir" ? "📁" : "🗄"));
+        }
+        if (d.truncated) {
+          list.append(Object.assign(document.createElement("div"),
+            { className: "fs-row muted", textContent: "… list truncated" }));
+        }
+        info.textContent = d.media_files != null
+          ? `${d.media_files.toLocaleString()} media file${d.media_files === 1 ? "" : "s"} here`
+          : "";
+      } catch (e) {
+        list.innerHTML = `<div class="fs-row bad">Failed: ${e.message}</div>`;
+      }
+    }
+
+    const sectionLabel = (text) => Object.assign(document.createElement("div"),
+      { className: "fs-section", textContent: text });
+
+    function row(name, path, kind, icon) {
+      const b = document.createElement("button");
+      b.type = "button";
+      b.className = "fs-row";
+      b.innerHTML = `<span class="fs-ico">${icon}</span><span class="fs-name"></span>`;
+      b.querySelector(".fs-name").textContent = name;
+      b.onclick = () => {
+        if (kind === "dir") { load(path); return; }
+        // file mode: select rather than descend
+        picked = path;
+        list.querySelectorAll(".fs-row.sel").forEach((el) => el.classList.remove("sel"));
+        b.classList.add("sel");
+        useBtn.disabled = false;
+        info.textContent = path;
+      };
+      return b;
+    }
+
+    upBtn.onclick = () => load(parent ?? "");
+    useBtn.onclick = () => finish(mode === "file" ? picked : here);
+    document.getElementById("fs-cancel").onclick = () => finish(null);
+    document.getElementById("fs-close").onclick = () => finish(null);
+    wrap.onclick = (e) => { if (e.target === wrap) finish(null); };
+    document.addEventListener("keydown", onKey);
+
+    fsPickerOpen = true;
+    wrap.hidden = false;
+    load(start);
+  });
+}
+
 function bindApiPopover() {
   const btn = document.getElementById("btn-api");
   const pop = document.getElementById("api-pop");
   const input = document.getElementById("api-url-input");
   const current = document.getElementById("api-current");
+  const msg = document.getElementById("api-settings-msg");
+  const envfile = document.getElementById("api-envfile");
 
-  btn.onclick = () => {
+  // key = the /api/settings JSON key; isDir=false for the .db file field.
+  // counts: what to report once the path resolves — media files for the image
+  // library, account subfolders for the music library (its MP3s are one level
+  // down), nothing for the single .db file.
+  const FIELDS = [
+    { key: "assetsdir",   el: "api-dir-assets",  status: "api-dir-assets-status",  isDir: true,  counts: "media" },
+    { key: "sunolibrary", el: "api-dir-library", status: "api-dir-library-status", isDir: true,  counts: "subdirs" },
+    { key: "sunometadb",  el: "api-dir-metadb",  status: "api-dir-metadb-status",  isDir: false, counts: null },
+  ];
+  for (const f of FIELDS) {
+    f.input = document.getElementById(f.el);
+    f.statusEl = document.getElementById(f.status);
+  }
+
+  const setStatus = (f, s) => {
+    if (!f.statusEl) return;
+    if (!s) { f.statusEl.textContent = ""; f.statusEl.className = "api-dir-status"; return; }
+    if (!s.exists) {
+      f.statusEl.textContent = "✕ not found";
+      f.statusEl.className = "api-dir-status bad";
+    } else if (f.isDir && !s.is_dir) {
+      f.statusEl.textContent = "✕ not a folder";
+      f.statusEl.className = "api-dir-status bad";
+    } else {
+      let detail = "";
+      if (f.counts === "media" && s.media_files != null) {
+        const n = s.media_files;
+        detail = ` — ${n.toLocaleString()}${s.media_files_capped ? "+" : ""} media file${n === 1 ? "" : "s"} here`;
+      } else if (f.counts === "subdirs" && s.subdirs != null) {
+        const n = s.subdirs;
+        detail = ` — ${n.toLocaleString()} account folder${n === 1 ? "" : "s"}`;
+      }
+      f.statusEl.textContent = `✓ found${detail}`;
+      f.statusEl.className = "api-dir-status ok";
+    }
+  };
+
+  // Validate a typed path against the server without saving it.
+  const checkPath = debounce(async (f) => {
+    const v = f.input?.value?.trim();
+    if (!v) return setStatus(f, null);
+    try {
+      const r = await fetch(`/api/settings/check?path=${encodeURIComponent(v)}&dir=${f.isDir}`);
+      setStatus(f, await r.json());
+    } catch (e) { setStatus(f, null); }
+  }, 400);
+
+  for (const f of FIELDS) {
+    f.input?.addEventListener("input", () => checkPath(f));
+  }
+
+  // 📁 buttons — pick a folder (or the .db file) instead of typing a path.
+  for (const btnEl of document.querySelectorAll(".api-dir-browse")) {
+    const f = FIELDS.find((x) => x.el === btnEl.dataset.browse);
+    if (!f) continue;
+    btnEl.onclick = async () => {
+      const chosen = await openFsPicker({
+        start: f.input?.value?.trim() || "",
+        mode: f.isDir ? "dir" : "file",
+        title: f.isDir ? "CHOOSE FOLDER" : "CHOOSE DATABASE FILE",
+      });
+      if (!chosen) return;
+      f.input.value = chosen;
+      checkPath(f);
+      if (msg) msg.textContent = "Press SAVE & RESCAN to apply.";
+    };
+  }
+
+  const loadSettings = async () => {
+    const r = await fetch("/api/settings");
+    const s = await r.json();
+    for (const f of FIELDS) {
+      if (f.input) f.input.value = s[f.key] || "";
+      setStatus(f, s.status?.[f.key]);
+    }
+    if (envfile) envfile.textContent = `Saved to ${s.envfile} — ${s.assets_indexed} media files indexed`;
+  };
+
+  btn.onclick = async () => {
     const stored = localStorage.getItem("myspot_api_base") || "";
     input.value = stored;
     current.textContent = stored ? `Active: ${stored}` : "Local mode (same-origin)";
+    if (msg) msg.textContent = "";
+    try {
+      await loadSettings();
+    } catch (e) { /* server may be on a different origin */ }
     pop.hidden = !pop.hidden;
   };
 
-  document.getElementById("api-save").onclick = () => {
+  document.getElementById("api-save").onclick = async () => {
+    const saveBtn = document.getElementById("api-save");
     const v = input.value.trim().replace(/\/$/, "");
     if (v) localStorage.setItem("myspot_api_base", v);
     else localStorage.removeItem("myspot_api_base");
-    location.reload();
+
+    const payload = {};
+    for (const f of FIELDS) {
+      const val = f.input?.value?.trim();
+      if (val) payload[f.key] = val;
+    }
+    saveBtn.disabled = true;
+    if (msg) { msg.textContent = "Saving…"; msg.className = "muted small"; }
+    try {
+      const r = await fetch("/api/settings", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(payload),
+      });
+      const data = await r.json();
+      if (!data.ok) {
+        // Bad path: keep the popover open so the typo can be fixed.
+        if (msg) { msg.textContent = data.error || "Save failed"; msg.className = "small bad"; }
+        saveBtn.disabled = false;
+        return;
+      }
+      if (data.reindex_triggered) {
+        toast("Library folders saved — rescanning");
+        // Scanning a big folder takes minutes (dimensions + perceptual hash per
+        // image), so report progress and reload only once it's done.
+        if (msg) {
+          msg.className = "muted small";
+          msg.innerHTML = `Saved. Rescanning… <a href="#" id="api-skip-wait">reload now</a>`;
+          document.getElementById("api-skip-wait").onclick = (ev) => {
+            ev.preventDefault();
+            location.reload();
+          };
+        }
+        await waitForReindex((n, secs) => {
+          const link = msg?.querySelector("#api-skip-wait");
+          if (msg) msg.firstChild.textContent =
+            `Saved. Rescanning — ${n.toLocaleString()} files indexed (${secs}s)… `;
+          if (link) link.textContent = "reload now";
+        });
+      } else {
+        toast("Settings saved");
+      }
+      location.reload();
+    } catch (e) {
+      if (msg) { msg.textContent = "Save failed: " + e.message; msg.className = "small bad"; }
+      saveBtn.disabled = false;
+    }
   };
 
   document.getElementById("api-clear").onclick = () => {
@@ -252,6 +512,10 @@ function bindApiPopover() {
   };
 
   document.addEventListener("click", (e) => {
+    // Clicks in the folder picker are "inside" Settings as far as the user is
+    // concerned — the picker layers over the popover, so collapsing the popover
+    // behind it would throw away whatever they were editing.
+    if (fsPickerOpen) return;
     if (!pop.hidden && !pop.contains(e.target) && e.target !== btn) pop.hidden = true;
   });
 }

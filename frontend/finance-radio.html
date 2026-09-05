@@ -1,0 +1,28 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>myspot finance radio</title>
+<link rel="icon" type="image/x-icon" href="/static/icon.ico" />
+<link rel="preconnect" href="https://fonts.googleapis.com" />
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=VT323&family=Pixelify+Sans:wght@400;500;600;700&family=Inter:wght@400;500;600;700&family=Roboto:wght@400;700&family=Bebas+Neue&family=Playfair+Display:wght@400;700&family=Space+Grotesk:wght@400;700&family=Nunito:wght@400;700&display=swap" />
+<link rel="stylesheet" href="/static/css/app.css?v=finance-desk1" />
+<script src="/static/config.js" onerror="this.remove()"></script>
+<script>
+  (function () {
+    var s = localStorage.getItem("myspot_api_base");
+    if (s) window.MYSPOT_API_BASE = s;
+  })();
+</script>
+</head>
+<body class="finance-radio-standalone-body">
+  <main id="finance-radio-root"></main>
+  <div id="toast" class="toast" hidden></div>
+  <script type="module">
+    import { renderFinanceRadio } from "/static/js/views/financeRadio.js?v=finance-desk1";
+    renderFinanceRadio({ mount: document.getElementById("finance-radio-root"), standalone: true });
+  </script>
+</body>
+</html>
