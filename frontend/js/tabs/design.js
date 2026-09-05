@@ -1,12 +1,12 @@
-import { el, clear, toast } from "../util.js";
+import { el, clear } from "../util.js";
 
 const STORE_KEY = "myspot.design.v1";
 
 const FONTS = [
+  { id: "grotesk",  label: "Space Grotesk — modern",    css: "var(--font-grotesk)" },
   { id: "display",  label: "Pixelify — pixel display",  css: "var(--font-display)" },
   { id: "pixel",    label: "VT323 — pixel terminal",    css: "var(--font-pixel)" },
   { id: "roboto",   label: "Roboto — clean & readable", css: "var(--font-roboto)" },
-  { id: "grotesk",  label: "Space Grotesk — modern",    css: "var(--font-grotesk)" },
   { id: "nunito",   label: "Nunito — rounded friendly", css: "var(--font-nunito)" },
   { id: "playfair", label: "Playfair — elegant serif",  css: "var(--font-playfair)" },
   { id: "bebas",    label: "Bebas Neue — bold caps",    css: "var(--font-bebas)" },
@@ -19,14 +19,6 @@ const PLACEMENTS = [
   { id: "overlay-bottom", label: "Overlay — lower" },
   { id: "overlay-top",    label: "Overlay — upper" },
   { id: "below",          label: "Below the video" },
-];
-
-const EFFECTS = [
-  { id: "fill",    label: "Text fill (karaoke)",   help: "Active line fills left-to-right as it plays." },
-  { id: "glow",    label: "Neon glow",             help: "Soft hue-tinted halo behind active line." },
-  { id: "outline", label: "Outline-only active",   help: "Active line drawn as bold outline." },
-  { id: "bounce",  label: "Bounce on line change", help: "Subtle bump when the active line advances." },
-  { id: "scrim",   label: "Dark scrim band",       help: "Translucent backdrop for legibility on busy art." },
 ];
 
 const COLOR_PRESETS = [
@@ -43,14 +35,10 @@ const COLOR_PRESETS = [
 ];
 
 const DEFAULTS = {
-  font: "roboto",
-  fontSize: 32,
+  font: "grotesk",
+  fontSize: 40,
   placement: "overlay-bottom",
-  lineMode: "line",      // "line" = 2 lines | "paragraph" = ~10 lines block
-  color: "",
-  fillFrom: "",
-  fillTo: "",
-  effects: ["fill", "glow", "scrim"],
+  color: "",   // "" = white
 };
 
 function load(songId) {
@@ -75,18 +63,8 @@ export function applyDesignSettings(songId) {
 
   const fontDef = FONTS.find((f) => f.id === s.font) || FONTS[0];
   overlay.style.setProperty("--lyric-font", fontDef.css);
-  overlay.style.setProperty("--lyric-size", `${s.fontSize || 32}px`);
-  overlay.style.setProperty("--lyric-color", s.color || "var(--accent)");
-  overlay.style.setProperty("--lyric-fill-a", s.fillFrom || "var(--accent)");
-  overlay.style.setProperty("--lyric-fill-b", s.fillTo || "var(--accent-2)");
-
-  // Communicate lineMode to the karaoke tick handler via dataset
-  overlay.dataset.lineMode = s.lineMode || "line";
-  overlay.classList.toggle("para-mode", s.lineMode === "paragraph");
-
-  for (const e of EFFECTS) {
-    overlay.classList.toggle(`fx-${e.id}`, (s.effects || []).includes(e.id));
-  }
+  overlay.style.setProperty("--lyric-size", `${s.fontSize || 40}px`);
+  overlay.style.setProperty("--lyric-color", s.color || "#ffffff");
 
   for (const p of PLACEMENTS) overlay.classList.remove(`placement-${p.id}`);
   overlay.classList.add(`placement-${s.placement || "overlay-bottom"}`);
@@ -107,8 +85,8 @@ function renderColorRow(label, presets, currentVal, onChange) {
   const swatches = el("div", { class: "design-swatches" });
 
   // Theme/accent swatch (value = "")
-  const themeSw = el("button", { type: "button", class: "swatch-btn", title: "Theme accent" });
-  themeSw.style.background = "var(--accent)";
+  const themeSw = el("button", { type: "button", class: "swatch-btn", title: "White" });
+  themeSw.style.background = "#ffffff";
   themeSw.style.border = "2px dashed var(--ink)";
   themeSw.onclick = () => { onChange(""); markActive(""); };
   swatches.append(themeSw);
@@ -124,7 +102,7 @@ function renderColorRow(label, presets, currentVal, onChange) {
 
   // Custom picker at end
   const custom = el("input", { type: "color", class: "swatch-custom",
-    value: currentVal || "#c8e85f", title: "Custom color" });
+    value: currentVal || "#ffffff", title: "Custom color" });
   custom.oninput = () => { onChange(custom.value); markActive(custom.value); };
   swatches.append(custom);
 
@@ -134,7 +112,7 @@ function renderColorRow(label, presets, currentVal, onChange) {
     const match = [...swatches.querySelectorAll(".swatch-btn[data-val]")]
       .find((b) => b.dataset.val === val);
     if (match) match.classList.add("active");
-    custom.value = val || "#c8e85f";
+    custom.value = val || "#ffffff";
   }
   markActive(currentVal);
 
@@ -147,7 +125,7 @@ export function renderDesign(body, song) {
   const settings = load(song.id);
 
   body.append(el("p", { class: "muted small", style: "margin-bottom:10px" },
-    "Style the karaoke lyric overlay. Settings save per song."));
+    "Karaoke shows one lyric line at a time with a soft blur-morph. Settings save per song."));
 
   // ── Font ──────────────────────────────────────────────────────
   const fontSection = el("section", { class: "gen-section" });
@@ -163,7 +141,7 @@ export function renderDesign(body, song) {
 
   const sizeRow = el("div", { class: "design-slider-row" });
   const sizeLabel = el("span", { class: "design-slider-label" }, `Size: ${settings.fontSize}px`);
-  const sizeSlider = el("input", { type: "range", min: "14", max: "72", step: "1", value: String(settings.fontSize) });
+  const sizeSlider = el("input", { type: "range", min: "18", max: "80", step: "1", value: String(settings.fontSize) });
   sizeSlider.oninput = () => {
     settings.fontSize = parseInt(sizeSlider.value, 10);
     sizeLabel.textContent = `Size: ${settings.fontSize}px`;
@@ -172,26 +150,6 @@ export function renderDesign(body, song) {
   sizeRow.append(sizeLabel, sizeSlider);
   fontSection.append(sizeRow);
   body.append(fontSection);
-
-  // ── Line mode ─────────────────────────────────────────────────
-  const modeSection = el("section", { class: "gen-section" });
-  modeSection.append(el("h5", { class: "section-h" }, "Lines"));
-  const modeRow = el("div", { class: "design-linemode-row" });
-  const linBtn = el("button", { type: "button", class: "design-linemode-btn" + (settings.lineMode !== "paragraph" ? " active" : "") }, "LINE (2)");
-  const paraBtn = el("button", { type: "button", class: "design-linemode-btn" + (settings.lineMode === "paragraph" ? " active" : "") }, "PARAGRAPH (10)");
-  linBtn.onclick = () => {
-    settings.lineMode = "line";
-    linBtn.classList.add("active"); paraBtn.classList.remove("active");
-    persist();
-  };
-  paraBtn.onclick = () => {
-    settings.lineMode = "paragraph";
-    paraBtn.classList.add("active"); linBtn.classList.remove("active");
-    persist();
-  };
-  modeRow.append(linBtn, paraBtn);
-  modeSection.append(modeRow);
-  body.append(modeSection);
 
   // ── Placement ─────────────────────────────────────────────────
   const placeSection = el("section", { class: "gen-section" });
@@ -206,39 +164,13 @@ export function renderDesign(body, song) {
   placeSection.append(placeSel);
   body.append(placeSection);
 
-  // ── Colors ────────────────────────────────────────────────────
+  // ── Colour ────────────────────────────────────────────────────
   const colorSection = el("section", { class: "gen-section" });
-  colorSection.append(el("h5", { class: "section-h" }, "Colors"));
-
+  colorSection.append(el("h5", { class: "section-h" }, "Colour"));
   colorSection.append(
-    renderColorRow("Base text", COLOR_PRESETS, settings.color,
-      (v) => { settings.color = v; persist(); }),
-    renderColorRow("Fill from", COLOR_PRESETS, settings.fillFrom,
-      (v) => { settings.fillFrom = v; persist(); }),
-    renderColorRow("Fill to", COLOR_PRESETS, settings.fillTo,
-      (v) => { settings.fillTo = v; persist(); }),
-  );
+    renderColorRow("Text", COLOR_PRESETS, settings.color,
+      (v) => { settings.color = v; persist(); }));
   body.append(colorSection);
-
-  // ── Effects ───────────────────────────────────────────────────
-  const fxSection = el("section", { class: "gen-section" });
-  fxSection.append(el("h5", { class: "section-h" }, "Effects"));
-  for (const e of EFFECTS) {
-    const row = el("label", { class: "design-fx-row" });
-    const cb = el("input", { type: "checkbox" });
-    cb.checked = (settings.effects || []).includes(e.id);
-    cb.onchange = () => {
-      const cur = new Set(settings.effects || []);
-      if (cb.checked) cur.add(e.id); else cur.delete(e.id);
-      settings.effects = [...cur];
-      persist();
-    };
-    row.append(cb,
-      el("span", { class: "design-fx-name" }, e.label),
-      el("span", { class: "muted small design-fx-help" }, e.help));
-    fxSection.append(row);
-  }
-  body.append(fxSection);
 
   // ── Preview ───────────────────────────────────────────────────
   const preview = el("section", { class: "gen-section design-preview" });
@@ -257,13 +189,8 @@ export function renderDesign(body, song) {
   function paintPreview() {
     const fontDef = FONTS.find((f) => f.id === settings.font) || FONTS[0];
     previewLine.style.fontFamily = fontDef.css;
-    previewLine.style.fontSize = `${settings.fontSize}px`;
-    previewLine.style.color = settings.color || "var(--accent)";
-    previewLine.style.setProperty("--lyric-fill-a", settings.fillFrom || "var(--accent)");
-    previewLine.style.setProperty("--lyric-fill-b", settings.fillTo || "var(--accent-2)");
-    for (const e of EFFECTS) {
-      previewLine.classList.toggle(`fx-${e.id}`, (settings.effects || []).includes(e.id));
-    }
+    previewLine.style.fontSize = `${Math.min(settings.fontSize, 40)}px`;
+    previewLine.style.color = settings.color || "#ffffff";
   }
 
   persist();

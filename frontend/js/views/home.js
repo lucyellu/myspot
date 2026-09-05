@@ -6,7 +6,7 @@ const PAGE = 60;
 
 // Persisted view state — density (px min-col width) + grid/list mode.
 const STORE_KEY = "myspot.home.v1";
-const DEFAULTS = { size: 110, view: "grid" };
+const DEFAULTS = { size: 110, view: "grid", sort: "recent" };
 function loadHomePrefs() {
   try { return { ...DEFAULTS, ...(JSON.parse(localStorage.getItem(STORE_KEY) || "{}")) }; }
   catch { return { ...DEFAULTS }; }
@@ -34,13 +34,15 @@ export async function renderHome({ account = null, q = null, tag = null } = {}) 
   const sizeSel = document.getElementById("home-size");
   const viewBtns = document.querySelectorAll(".view-btn");
 
-  // Default sort: most-played for top-level, recent for channel/search views
-  if (!account && !q && [...sortSel.options].some(o => o.value === "popular")) {
-    sortSel.value = "popular";
-  }
-
-  // Hydrate size + view-mode from localStorage
+  // Hydrate size + view-mode + sort from localStorage
   const prefs = loadHomePrefs();
+
+  // Default sort is RECENT everywhere. A persisted choice wins, but only if it
+  // is still one of the options this build offers.
+  const wanted = [...sortSel.options].some(o => o.value === prefs.sort)
+    ? prefs.sort
+    : DEFAULTS.sort;
+  sortSel.value = wanted;
   const applySize = (px) => {
     grid.style.setProperty("--card-min", `${px}px`);
   };
@@ -89,7 +91,12 @@ export async function renderHome({ account = null, q = null, tag = null } = {}) 
   }
 
   more.onclick = () => loadPage(false);
-  sortSel.onchange = () => { sort = sortSel.value; loadPage(true); };
+  sortSel.onchange = () => {
+    sort = sortSel.value;
+    prefs.sort = sort;
+    saveHomePrefs(prefs);
+    loadPage(true);
+  };
 
   await loadPage(true);
 
@@ -182,6 +189,8 @@ export function card(s) {
     const liked = article.querySelector(".card-liked");
     if (liked) liked.hidden = false;
   }
+  const videoBadge = article.querySelector(".card-video-badge");
+  if (videoBadge) videoBadge.hidden = !s.video_only;
 
   return article;
 }

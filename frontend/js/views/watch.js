@@ -17,10 +17,12 @@ let _traySelected = new Set();  // tray ids picked via multi-select
 let _trackSelected = new Set();  // track-clip gen ids picked for batch delete
 
 const SLIDESHOW_KEY = "myspot.slideshow.v1";  // { [songId]: bool }
-const WATCH_LAYOUT_KEY = "myspot.watch.layout.v1";
+const WATCH_LAYOUT_KEY = "myspot.watch.layout.v2";
 const WATCH_DEFAULTS = {
   order: ["stage", "media", "studio"],
-  widths: { stage: 560, media: 360, studio: 420 },
+  // Used as flex weights (fr units) so the lanes always fill the window with no
+  // dead space; the ratios below just set the default split (studio widest).
+  widths: { stage: 560, media: 340, studio: 520 },
   collapsed: {},
 };
 function loadSlideshowMode(songId) {
@@ -83,7 +85,11 @@ function bindWatchLayout() {
     bindResizers();
   };
 
-  const colFor = (key) => layout.collapsed[key] ? "44px" : `${Math.max(220, Number(layout.widths[key]) || WATCH_DEFAULTS.widths[key])}px`;
+  // Non-collapsed lanes are sized in fr units (weights) so the row always fills
+  // the window with no dead space; a collapsed lane is a fixed 44px rail.
+  const colFor = (key) => layout.collapsed[key]
+    ? "44px"
+    : `${Math.max(120, Number(layout.widths[key]) || WATCH_DEFAULTS.widths[key])}fr`;
   const applyLayout = () => {
     for (const [key, lane] of lanes) {
       const collapsed = !!layout.collapsed[key];
@@ -154,8 +160,13 @@ function bindWatchLayout() {
         const after = resizer.dataset.resizeAfter;
         if (!before || !after || layout.collapsed[before] || layout.collapsed[after]) return;
         const startX = e.clientX;
-        const startBefore = lanes.get(before).getBoundingClientRect().width;
-        const startAfter = lanes.get(after).getBoundingClientRect().width;
+        // Snapshot every lane's rendered width so the fr weights all share one
+        // pixel scale — then dragging a divider only moves its two neighbours.
+        for (const [k, lane] of lanes) {
+          if (!layout.collapsed[k]) layout.widths[k] = lane.getBoundingClientRect().width;
+        }
+        const startBefore = layout.widths[before];
+        const startAfter = layout.widths[after];
         resizer.setPointerCapture(e.pointerId);
         resizer.classList.add("resizing");
         const move = (ev) => {
@@ -989,67 +1000,59 @@ function bindKaraoke(audio, song, signal) {
   const toggle = document.getElementById("tp-karaoke");
   if (!overlay || !toggle) return;
 
-  // Apply persisted design settings (font, color, effects) before we render.
+  // Font / size / colour / placement still come from the Design tab.
   try { applyDesignSettings(song.id); }
   catch (e) { console.warn("design settings failed", e); }
 
+  let lastIdx = -1;
   const apply = () => {
     overlay.hidden = !_karaokeOn;
     toggle.classList.toggle("on", _karaokeOn);
+    if (_karaokeOn) lastIdx = -1;  // re-render the active line on the next tick
   };
   toggle.onclick = () => { _karaokeOn = !_karaokeOn; apply(); };
   apply();
 
-  if (!song.lyrics || !song.lyrics.length) {
-    overlay.hidden = true;
-    return;
-  }
+  overlay.innerHTML = "";
+  const lines = (song.lyrics || []).filter((l) => l.text && l.text.trim());
+  if (!lines.length) { overlay.hidden = true; return; }
 
-  const lines = song.lyrics.filter((l) => l.text && l.text.trim());
-  let lastIdx = -1;
+  // One line at a time: the new line morphs in (blur -> sharp) while the
+  // previous line morphs out (sharp -> blur), overlapping in the same spot.
+  const showLine = (text) => {
+    const prev = overlay.querySelector(".lyric-line-current:not(.morph-out)");
+    if (prev) {
+      prev.classList.remove("morph-in");
+      prev.classList.add("morph-out");
+      prev.addEventListener("animationend", () => prev.remove(), { once: true });
+      setTimeout(() => prev.remove(), 800);  // fallback if animationend is missed
+    }
+    const line = document.createElement("div");
+    line.className = "lyric-line-current morph-in";
+    line.textContent = text;  // textContent is inherently XSS-safe — no escaping
+    overlay.append(line);
+  };
+
+  const lineIdxAt = (t, total) =>
+    Math.min(lines.length - 1, Math.max(0, Math.floor(t / (total / lines.length))));
+
+  // Show the line for the current position right away, so lyrics are visible in
+  // the stage as soon as the song opens — not only once playback starts ticking.
+  const primeTotal = audio.duration || song.duration || 0;
+  lastIdx = primeTotal ? lineIdxAt(audio.currentTime || 0, primeTotal) : 0;
+  showLine(lines[lastIdx].text);
+
   const handler = (e) => {
     if (overlay.hidden) return;
     const { t, total } = e.detail;
-    if (!total || !lines.length) return;
-    const segment = total / lines.length;
-    const idx = Math.min(lines.length - 1, Math.floor(t / segment));
-    const lineProgress = Math.min(1, Math.max(0, (t - idx * segment) / segment));
-
+    if (!total) return;
+    const idx = lineIdxAt(t, total);
     if (idx !== lastIdx) {
-      const lineMode = overlay.dataset.lineMode || "line";
-      if (lineMode === "paragraph") {
-        // Show a window of 10 lines: 2 past + current + 7 upcoming
-        const winStart = Math.max(0, idx - 2);
-        const winEnd = Math.min(lines.length - 1, idx + 7);
-        let html = "";
-        for (let i = winStart; i <= winEnd; i++) {
-          const txt = escapeHtml(lines[i].text);
-          if (i === idx) {
-            html += `<div class="lyric-line-current" data-text="${txt}">${txt}</div>`;
-          } else {
-            const cls = i < idx ? "lyric-line-para past" : "lyric-line-para";
-            html += `<div class="${cls}">${txt}</div>`;
-          }
-        }
-        overlay.innerHTML = html;
-      } else {
-        const cur = lines[idx]?.text || "";
-        const nxt = lines[idx + 1]?.text || "";
-        overlay.innerHTML =
-          `<div class="lyric-line-current" data-text="${escapeHtml(cur)}">${escapeHtml(cur)}</div>` +
-          (nxt ? `<div class="lyric-line-next">${escapeHtml(nxt)}</div>` : "");
-      }
+      showLine(lines[idx].text);
       lastIdx = idx;
     }
-    overlay.style.setProperty("--fill-progress", lineProgress.toFixed(3));
   };
   document.addEventListener("audio:tick", handler, { signal });
-}
-
-function escapeHtml(s) {
-  return String(s)
-    .replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;")
-    .replace(/"/g, "&quot;").replace(/'/g, "&#39;");
 }
 
 export function refreshPlayerVisual(song) {
