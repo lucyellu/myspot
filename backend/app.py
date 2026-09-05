@@ -20,6 +20,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import FileResponse, JSONResponse, StreamingResponse
 from fastapi.staticfiles import StaticFiles
 
+from . import config
 from .config import (
     HOST, PORT, FRONTEND_DIR, GENS_DIR, ASSETS_DIR, SUNO_LIBRARY, EXPORTS_DIR,
     secret_source, reload_env,
@@ -305,7 +306,9 @@ def list_songs(
 
     D, A = ("DESC", "ASC") if dir == "desc" else ("ASC", "DESC")
     order = {
-        "recent":       f"s.id {D}",
+        # Sort by when Suno actually made the track. s.id is only insertion
+        # order, so a re-index reshuffles "recent" into meaningless order.
+        "recent":       f"s.suno_date {D} NULLS LAST, s.id {D}",
         "title":        f"s.base_title {D}, s.version {D}",
         "version":      f"s.version {D}, s.id {D}",
         "popular":      f"s.suno_play_count {D} NULLS LAST, s.id {D}",
@@ -317,6 +320,7 @@ def list_songs(
     sql = f"""
         SELECT s.id, s.title, s.base_title, s.version, s.account, s.genre, s.bpm,
                s.duration, s.suno_date, s.jpg_path, s.suno_id IS NOT NULL AS has_cache,
+               s.mp3_path IS NULL AND s.video_path IS NOT NULL AS video_only,
                s.liked, s.suno_play_count, s.suno_upvote_count, s.suno_is_liked,
                s.suno_model, s.suno_style,
                (SELECT COUNT(*) FROM lyric_lines ll WHERE ll.song_id = s.id) AS lyric_count,
@@ -481,7 +485,9 @@ def _fts_query(q: str) -> str:
 def get_song(song_id: int):
     song = _conn.execute(
         """SELECT s.id, s.suno_id, s.title, s.base_title, s.version, s.artist, s.account,
-                  s.genre, s.bpm, s.prompt, s.duration, s.mp3_path, s.jpg_path, s.txt_path,
+                  s.genre, s.bpm, s.prompt, s.duration, s.mp3_path, s.video_path,
+                  s.mp3_path IS NULL AND s.video_path IS NOT NULL AS video_only,
+                  s.jpg_path, s.txt_path,
                   s.wav_path, s.mid_path, s.suno_date, s.indexed_at, s.liked,
                   s.suno_play_count, s.suno_upvote_count, s.suno_is_liked,
                   s.suno_model, s.suno_style, s.suno_video_url,
@@ -588,7 +594,9 @@ def fingerprint_all_songs():
     def _run():
         conn2 = _connect()
         try:
-            rows = conn2.execute("SELECT id, mp3_path FROM songs WHERE mfcc IS NULL").fetchall()
+            rows = conn2.execute(
+                "SELECT id, mp3_path FROM songs WHERE mfcc IS NULL AND mp3_path IS NOT NULL"
+            ).fetchall()
             for row in rows:
                 vec = extract_mfcc(row["mp3_path"])
                 if vec:
@@ -1102,42 +1110,267 @@ def reload_env_endpoint():
     return {"ok": True, "loaded_keys": sorted(cache.keys())}
 
 
+_SETTINGS_KEYS = {
+    "sunolibrary": "SUNO_LIBRARY",
+    "sunometadb": "SUNO_META_DB",
+    "assetsdir": "ASSETS_DIR",
+}
+
+_IMAGE_EXTS = {".jpg", ".jpeg", ".png", ".webp", ".gif"}
+_VIDEO_EXTS = {".mp4", ".mkv", ".webm", ".mov", ".avi"}
+
+
+def _path_status(raw: str, *, want_dir: bool = True) -> dict:
+    """Describe a configured path so the UI can show whether it is usable
+    before the user commits to saving it."""
+    p = Path(raw)
+    # Report forward slashes everywhere so the panel doesn't mix separator
+    # styles between typed, server-loaded, and picker-chosen paths.
+    out = {"path": str(p).replace("\\", "/"), "exists": False, "is_dir": False,
+           "media_files": None, "media_files_capped": False, "subdirs": None}
+    try:
+        out["exists"] = p.exists()
+        out["is_dir"] = p.is_dir()
+    except OSError:
+        return out
+    if not out["exists"]:
+        return out
+    if want_dir and out["is_dir"]:
+        # Shallow count only — a deep rglob over a big library would make the
+        # settings panel hang every time it opens.
+        # One pass, two counts: images/video for the media library, and
+        # subfolders for the music library (whose MP3s sit one level down, in
+        # per-account folders — so a media count there would read as a bogus 0).
+        n = 0
+        subdirs = 0
+        capped = False
+        try:
+            for child in p.iterdir():
+                try:
+                    if child.is_dir():
+                        subdirs += 1
+                        continue
+                except OSError:
+                    continue
+                if child.suffix.lower() in (_IMAGE_EXTS | _VIDEO_EXTS):
+                    n += 1
+                if n >= 5000:
+                    capped = True
+                    break
+        except OSError:
+            n = 0
+        out["media_files"] = n
+        out["media_files_capped"] = capped
+        out["subdirs"] = subdirs
+    return out
+
+
 @app.get("/api/settings")
 def get_settings():
-    """Return current directory configuration."""
-    from .config import ENV_FILE, SUNO_LIBRARY, SUNO_META_DB, ASSETS_DIR
+    """Return current directory configuration, plus per-path health so the UI
+    can flag a typo'd or missing folder instead of silently doing nothing."""
+    indexed = _conn.execute("SELECT COUNT(*) FROM assets").fetchone()[0]
+    _fs = lambda p: str(p).replace("\\", "/")
     return {
-        "sunolibrary": str(SUNO_LIBRARY),
-        "sunometadb": str(SUNO_META_DB),
-        "assetsdir": str(ASSETS_DIR),
-        "envfile": str(ENV_FILE),
+        "sunolibrary": _fs(config.SUNO_LIBRARY),
+        "sunometadb": _fs(config.SUNO_META_DB),
+        "assetsdir": _fs(config.ASSETS_DIR),
+        "envfile": _fs(config.ENV_FILE),
+        "status": {
+            "sunolibrary": _path_status(str(config.SUNO_LIBRARY)),
+            "sunometadb": _path_status(str(config.SUNO_META_DB), want_dir=False),
+            "assetsdir": _path_status(str(config.ASSETS_DIR)),
+        },
+        "assets_indexed": indexed,
+        "reindexing": _reindex_state["running"],
+    }
+
+
+@app.get("/api/settings/check")
+def check_settings_path(path: str = Query(...), dir: bool = Query(True)):
+    """Validate a path the user has typed but not saved yet."""
+    return _path_status(path.strip(), want_dir=dir)
+
+
+# --------------------------- Folder picker --------------------------
+#
+# Browsing the filesystem is loopback-only. myspot can be published through a
+# Cloudflare tunnel (start_public.bat) with no authentication in front of it,
+# and a directory listing would hand anyone with that URL a map of the whole
+# disk. Remote clients can still type a path into Settings by hand.
+# Set MYSPOT_ALLOW_REMOTE_BROWSE=1 in .env to lift this.
+
+_DB_EXTS = {".db", ".sqlite", ".sqlite3"}
+_FS_ENTRY_LIMIT = 2000
+
+
+def _is_local_request(request: Request) -> bool:
+    host = (request.client.host if request.client else "") or ""
+    return host in ("127.0.0.1", "::1", "localhost", "::ffff:127.0.0.1")
+
+
+def _require_local_browse(request: Request):
+    if _is_local_request(request):
+        return
+    if (os.environ.get("MYSPOT_ALLOW_REMOTE_BROWSE")
+            or config._ENV_CACHE.get("MYSPOT_ALLOW_REMOTE_BROWSE")):
+        return
+    raise HTTPException(
+        403,
+        "Folder browsing is available only on the machine running myspot. "
+        "Type the path instead, or set MYSPOT_ALLOW_REMOTE_BROWSE=1.",
+    )
+
+
+def _drive_roots() -> list[str]:
+    """Windows drive letters that are actually present; '/' elsewhere."""
+    if os.name != "nt":
+        return ["/"]
+    out = []
+    for letter in "ABCDEFGHIJKLMNOPQRSTUVWXYZ":
+        root = f"{letter}:/"
+        try:
+            if os.path.exists(root):
+                out.append(root)
+        except OSError:
+            continue
+    return out
+
+
+@app.get("/api/fs/list")
+def fs_list(
+    request: Request,
+    path: str = Query("", description="Directory to list; empty = drive roots"),
+    mode: str = Query("dir", pattern="^(dir|file)$"),
+):
+    """List subfolders of `path` so the UI can offer a folder picker.
+
+    mode="file" additionally lists SQLite files (for the Suno metadata DB).
+    """
+    _require_local_browse(request)
+
+    drives = _drive_roots()
+    raw = (path or "").strip()
+
+    if not raw:
+        # Landing view: drives plus the folders already in use, so the common
+        # case is one click rather than a walk down from the drive root.
+        shortcuts = []
+        for label, p in (
+            ("Media library", config.ASSETS_DIR),
+            ("Music library", config.SUNO_LIBRARY),
+            ("Home", Path.home()),
+            ("Desktop", Path.home() / "Desktop"),
+        ):
+            try:
+                if p.exists() and p.is_dir():
+                    shortcuts.append({"name": label, "path": str(p).replace("\\", "/")})
+            except OSError:
+                continue
+        return {
+            "path": "", "parent": None, "drives": drives,
+            "entries": [{"name": d, "path": d, "kind": "dir"} for d in drives],
+            "shortcuts": shortcuts, "media_files": None, "truncated": False,
+        }
+
+    p = Path(raw)
+    if not p.exists():
+        raise HTTPException(404, f"not found: {raw}")
+    if not p.is_dir():
+        p = p.parent          # a file was passed — show its folder
+
+    entries = []
+    truncated = False
+    media_files = 0
+    try:
+        for child in sorted(p.iterdir(), key=lambda c: c.name.lower()):
+            try:
+                is_dir = child.is_dir()
+            except OSError:
+                continue
+            if is_dir:
+                if child.name.startswith("$") or child.name.startswith("."):
+                    continue          # recycle bin, system + dotfolders
+                entries.append({
+                    "name": child.name,
+                    "path": str(child).replace("\\", "/"),
+                    "kind": "dir",
+                })
+            else:
+                ext = child.suffix.lower()
+                if ext in (_IMAGE_EXTS | _VIDEO_EXTS):
+                    media_files += 1
+                if mode == "file" and ext in _DB_EXTS:
+                    entries.append({
+                        "name": child.name,
+                        "path": str(child).replace("\\", "/"),
+                        "kind": "file",
+                    })
+            if len(entries) >= _FS_ENTRY_LIMIT:
+                truncated = True
+                break
+    except PermissionError:
+        raise HTTPException(403, f"permission denied: {p}")
+    except OSError as e:
+        raise HTTPException(400, f"cannot read {p}: {e}")
+
+    here = str(p).replace("\\", "/")
+    parent = str(p.parent).replace("\\", "/")
+    if parent == here:            # already at a drive root
+        parent = ""
+
+    return {
+        "path": here,
+        "parent": parent,
+        "drives": drives,
+        "entries": entries,
+        "shortcuts": [],
+        "media_files": media_files,
+        "truncated": truncated,
     }
 
 
 @app.post("/api/settings")
 def update_settings(payload: dict = Body(...)):
-    """Update directory paths in .env file. Triggers reindex on library change."""
-    from .config import ENV_FILE, SUNO_LIBRARY
+    """Update directory paths in the .env file. Applies immediately (no restart)
+    and reindexes when a library root changed."""
+    ENV_FILE = config.ENV_FILE
     updates = {}
-    for key in ("sunolibrary", "sunometadb", "assetsdir"):
+    for key in _SETTINGS_KEYS:
         if key in payload and payload[key]:
-            updates[key] = payload[key]
+            updates[key] = str(payload[key]).strip().replace("\\", "/").rstrip("/")
 
     if not updates:
         return {"ok": False, "error": "no valid keys to update"}
+
+    # Reject paths that don't exist — saving a typo used to look like success
+    # and then quietly produce an empty library.
+    if not payload.get("allow_missing"):
+        missing = [
+            k for k, v in updates.items()
+            if not _path_status(v, want_dir=(k != "sunometadb"))["exists"]
+        ]
+        if missing:
+            return {
+                "ok": False,
+                "error": "path not found: " + ", ".join(f"{k}={updates[k]}" for k in missing),
+                "missing": missing,
+            }
 
     # Read current .env
     lines = []
     if ENV_FILE.exists():
         lines = ENV_FILE.read_text(encoding="utf-8").splitlines()
 
-    env_key_map = {
-        "sunolibrary": "SUNO_LIBRARY",
-        "sunometadb": "SUNO_META_DB",
-        "assetsdir": "ASSETS_DIR",
-    }
+    env_key_map = _SETTINGS_KEYS
 
-    old_library = str(SUNO_LIBRARY)
+    # Read the *live* values — a frozen import would go stale after the first
+    # save in this process and suppress the reindex on the next one.
+    old_paths = {
+        "sunolibrary": str(config.SUNO_LIBRARY),
+        "sunometadb": str(config.SUNO_META_DB),
+        "assetsdir": str(config.ASSETS_DIR),
+    }
     new_lines = []
     updated_keys = set()
     for line in lines:
@@ -1160,21 +1393,37 @@ def update_settings(payload: dict = Body(...)):
     for json_key, env_key in env_key_map.items():
         if json_key in updates and json_key not in updated_keys:
             new_lines.append(f"{env_key}={updates[json_key]}")
+            updated_keys.add(json_key)
 
     ENV_FILE.write_text("\n".join(new_lines) + "\n", encoding="utf-8")
     reload_env()
 
-    # Trigger reindex if library changed
-    new_library = updates.get("sunolibrary", old_library)
+    # Reindex whenever a scanned root moved — the media library (assetsdir)
+    # counts, not just the music library.
+    def _moved(key: str) -> bool:
+        new = updates.get(key)
+        if not new:
+            return False
+        return new.replace("\\", "/").rstrip("/").lower() != \
+            old_paths[key].replace("\\", "/").rstrip("/").lower()
+
+    changed = [k for k in ("sunolibrary", "assetsdir", "sunometadb") if _moved(k)]
+    # Only the media folder moved → rescan just the media folder, which takes
+    # seconds instead of grinding through the whole music library.
+    scope = "assets" if changed == ["assetsdir"] else "all"
     reindex_triggered = False
-    if new_library != old_library:
-        threading.Thread(target=_reindex_runner, daemon=True).start()
+    if changed and not _reindex_state["running"]:
+        threading.Thread(target=_reindex_runner, args=(scope,), daemon=True).start()
         reindex_triggered = True
 
     return {
         "ok": True,
-        "updated": list(updated_keys),
+        "updated": sorted(updated_keys),
+        "changed": changed,
         "reindex_triggered": reindex_triggered,
+        "reindex_scope": scope if reindex_triggered else None,
+        "reindex_busy": bool(changed and not reindex_triggered),
+        "settings": {k: str(getattr(config, v)) for k, v in _SETTINGS_KEYS.items()},
     }
 
 
@@ -1184,7 +1433,7 @@ async def upload_test_mp3(file: UploadFile = File(...)):
     if not file.filename or not file.filename.lower().endswith(".mp3"):
         raise HTTPException(400, "Only .mp3 files are accepted")
     import shutil
-    dest = SUNO_LIBRARY / "test" / file.filename
+    dest = config.SUNO_LIBRARY / "test" / file.filename
     dest.parent.mkdir(parents=True, exist_ok=True)
     with open(dest, "wb") as f:
         shutil.copyfileobj(file.file, f)
@@ -1512,6 +1761,8 @@ def export_song(song_id: int):
     ).fetchone()
     if s is None:
         raise HTTPException(404, "song not found")
+    if not s["mp3_path"]:
+        raise HTTPException(400, "no mp3 for this song — it only has a video render")
     gens = _rows(
         _conn.execute(
             """SELECT id, kind, file_path FROM gens
@@ -1552,6 +1803,8 @@ def export_lyrics(song_id: int):
     ).fetchone()
     if s is None:
         raise HTTPException(404, "song not found")
+    if not s["mp3_path"]:
+        raise HTTPException(400, "no mp3 for this song — it only has a video render")
     lyrics = _rows(
         _conn.execute(
             "SELECT idx, text, section FROM lyric_lines WHERE song_id=? ORDER BY idx",
@@ -1688,7 +1941,7 @@ def asset_folders():
 @app.get("/api/media_roots")
 def media_roots():
     return {
-        "assets_dir": _safe_path(str(ASSETS_DIR)),
+        "assets_dir": _safe_path(str(config.ASSETS_DIR)),
         "gens_dir": _safe_path(str(GENS_DIR)),
         "exports_dir": _safe_path(str(EXPORTS_DIR)),
     }
@@ -1735,17 +1988,23 @@ def _under(p: str, allowed_dirs: list[Path]) -> bool:
     return False
 
 
-_MEDIA_ROOTS = [SUNO_LIBRARY, ASSETS_DIR, GENS_DIR, EXPORTS_DIR,
-    # Include both L: and hold libraries so songs work during/after migration
-    Path("L:/Media/Audio/suno_library"),
-    Path("C:/Users/lucyl/Desktop/hold/projects/suno_library"),
-]
-_LIVE_REF_ROOTS = _MEDIA_ROOTS + [
-    Path("L:/Media/Audio/suno/albumart"),
-    Path("L:/Media/Audio/suno_library"),
-    # Add subdirectories of SUNO_LIBRARY to ensure image access
-    *(SUNO_LIBRARY.glob("*/") if SUNO_LIBRARY.exists() else []),
-]
+# Computed per request (not at import) so that changing the library folders in
+# Settings takes effect immediately — a frozen list would 403 every file in the
+# newly-configured library until the server was restarted.
+def _media_roots() -> list[Path]:
+    return [config.SUNO_LIBRARY, config.ASSETS_DIR, GENS_DIR, EXPORTS_DIR,
+        Path("L:/Media/Audio/suno_library"),
+    ]
+
+
+def _live_ref_roots() -> list[Path]:
+    lib = config.SUNO_LIBRARY
+    return _media_roots() + [
+        Path("L:/Media/Audio/suno/albumart"),
+        Path("L:/Media/Audio/suno_library"),
+        # Add subdirectories of SUNO_LIBRARY to ensure image access
+        *(lib.glob("*/") if lib.exists() else []),
+    ]
 
 
 @app.get("/media/live_board/{board_id:path}/ref/{idx}")
@@ -1758,7 +2017,7 @@ def media_live_board_ref(board_id: str, idx: int):
     if idx < 0 or idx >= len(refs):
         raise HTTPException(404, "reference not found")
     path = refs[idx]
-    if not _under(path, _LIVE_REF_ROOTS):
+    if not _under(path, _live_ref_roots()):
         raise HTTPException(403, "forbidden")
     fp = Path(path)
     if not fp.exists():
@@ -1766,14 +2025,84 @@ def media_live_board_ref(board_id: str, idx: int):
     return FileResponse(fp)
 
 
+def _serve_media_file(request: Request, path: str, media_type=None, cache=None):
+    """Serve a file with HTTP Range support so <audio>/<video> can seek.
+
+    Starlette's FileResponse isn't emitting 206s for Range requests in this
+    build, which makes the scrubber unable to seek. Handle Range explicitly:
+    a `Range: bytes=start-end` request gets a 206 with just that byte slice."""
+    p = Path(path)
+    try:
+        file_size = p.stat().st_size
+    except OSError:
+        raise HTTPException(404, "file not found")
+
+    base_headers = {"Accept-Ranges": "bytes"}
+    if cache:
+        base_headers["Cache-Control"] = cache
+
+    range_header = request.headers.get("range")
+    m = re.match(r"\s*bytes\s*=\s*(\d*)\s*-\s*(\d*)", range_header or "")
+    if not range_header or not m or (not m.group(1) and not m.group(2)):
+        return FileResponse(path, media_type=media_type, headers=base_headers)
+
+    start_s, end_s = m.group(1), m.group(2)
+    if start_s == "":                       # suffix range: final N bytes
+        start = max(0, file_size - int(end_s))
+        end = file_size - 1
+    else:
+        start = int(start_s)
+        end = int(end_s) if end_s else file_size - 1
+    end = min(end, file_size - 1)
+
+    if start > end or start >= file_size:
+        return JSONResponse(
+            {"error": "range not satisfiable"},
+            status_code=416,
+            headers={**base_headers, "Content-Range": f"bytes */{file_size}"},
+        )
+
+    length = end - start + 1
+
+    def _stream(chunk_size=64 * 1024):
+        with open(path, "rb") as f:
+            f.seek(start)
+            remaining = length
+            while remaining > 0:
+                data = f.read(min(chunk_size, remaining))
+                if not data:
+                    break
+                remaining -= len(data)
+                yield data
+
+    return StreamingResponse(
+        _stream(),
+        status_code=206,
+        media_type=media_type or "application/octet-stream",
+        headers={
+            **base_headers,
+            "Content-Range": f"bytes {start}-{end}/{file_size}",
+            "Content-Length": str(length),
+        },
+    )
+
+
 @app.get("/media/audio/{song_id}")
-def media_audio(song_id: int):
-    row = _conn.execute("SELECT mp3_path FROM songs WHERE id=?", (song_id,)).fetchone()
-    if row is None or not row["mp3_path"]:
+def media_audio(song_id: int, request: Request):
+    row = _conn.execute(
+        "SELECT mp3_path, video_path FROM songs WHERE id=?", (song_id,)
+    ).fetchone()
+    if row is None or not (row["mp3_path"] or row["video_path"]):
         raise HTTPException(404, "audio not found")
-    if not _under(row["mp3_path"], _MEDIA_ROOTS):
+    # No mp3 (Suno's audio_url returned 403 for this clip) — fall back to the
+    # .mp4 render. <audio> elements happily play an mp4's audio track.
+    path, media_type = (
+        (row["mp3_path"], "audio/mpeg") if row["mp3_path"]
+        else (row["video_path"], "video/mp4")
+    )
+    if not _under(path, _media_roots()):
         raise HTTPException(403, "forbidden")
-    return FileResponse(row["mp3_path"], media_type="audio/mpeg")
+    return _serve_media_file(request, path, media_type=media_type)
 
 
 @app.get("/media/cover/{song_id}")
@@ -1781,7 +2110,7 @@ def media_cover(song_id: int):
     row = _conn.execute("SELECT jpg_path FROM songs WHERE id=?", (song_id,)).fetchone()
     if row is None or not row["jpg_path"]:
         raise HTTPException(404, "cover not found")
-    if not _under(row["jpg_path"], _MEDIA_ROOTS):
+    if not _under(row["jpg_path"], _media_roots()):
         raise HTTPException(403, "forbidden")
     resp = FileResponse(row["jpg_path"])
     resp.headers["Cache-Control"] = "no-cache"
@@ -1793,7 +2122,7 @@ def media_asset(asset_id: int):
     row = _conn.execute("SELECT file_path, kind FROM assets WHERE id=?", (asset_id,)).fetchone()
     if row is None or not row["file_path"]:
         raise HTTPException(404, "asset not found")
-    if not _under(row["file_path"], _MEDIA_ROOTS):
+    if not _under(row["file_path"], _media_roots()):
         raise HTTPException(403, "forbidden")
     return FileResponse(row["file_path"])
 
@@ -1803,20 +2132,27 @@ def media_gen(gen_id: int):
     row = _conn.execute("SELECT file_path FROM gens WHERE id=?", (gen_id,)).fetchone()
     if row is None or not row["file_path"]:
         raise HTTPException(404, "gen not found")
-    if not _under(row["file_path"], _MEDIA_ROOTS):
+    if not _under(row["file_path"], _media_roots()):
         raise HTTPException(403, "forbidden")
     return FileResponse(row["file_path"])
 
 
 # ----------------------------- Maintenance --------------------------
 
-_reindex_state = {"running": False, "last_result": None}
+_reindex_state = {"running": False, "last_result": None, "scope": None, "progress": 0}
 
 
-def _reindex_runner():
+def _reindex_runner(scope: str = "all"):
     _reindex_state["running"] = True
+    _reindex_state["scope"] = scope
+    _reindex_state["progress"] = 0
+
+    def _progress(n):
+        _reindex_state["progress"] = n
+
     try:
-        _reindex_state["last_result"] = full_reindex(verbose=False)
+        _reindex_state["last_result"] = full_reindex(
+            verbose=False, scope=scope, progress=_progress)
     finally:
         _reindex_state["running"] = False
 
@@ -2114,8 +2450,20 @@ async def events():
 
 # ----------------------------- Frontend -----------------------------
 
+class _NoCacheStaticFiles(StaticFiles):
+    """Serve static assets with revalidation so edited JS/CSS never get stuck
+    behind a stale browser cache. The `?v=` query strings alone don't force a
+    refetch; `no-cache` makes the browser revalidate (fast 304 when unchanged,
+    fresh 200 the moment a file actually changes)."""
+
+    async def get_response(self, path, scope):
+        resp = await super().get_response(path, scope)
+        resp.headers["Cache-Control"] = "no-cache, must-revalidate"
+        return resp
+
+
 if FRONTEND_DIR.exists():
-    app.mount("/static", StaticFiles(directory=str(FRONTEND_DIR)), name="static")
+    app.mount("/static", _NoCacheStaticFiles(directory=str(FRONTEND_DIR)), name="static")
 
 
 @app.get("/")
