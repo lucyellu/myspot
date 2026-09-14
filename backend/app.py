@@ -23,8 +23,9 @@ from fastapi.staticfiles import StaticFiles
 from . import config
 from .config import (
     HOST, PORT, FRONTEND_DIR, GENS_DIR, ASSETS_DIR, SUNO_LIBRARY, EXPORTS_DIR,
-    secret_source, reload_env,
+    DATA_DIR, secret_source, reload_env,
 )
+
 from .db import init_db
 from .library import full_reindex
 from .sunometa_db import SunoMetaDB
