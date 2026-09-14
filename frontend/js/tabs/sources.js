@@ -7,7 +7,21 @@ export function renderSources(body, song) {
   const hasSources = song.sources && song.sources.length;
   const hasDerivs = song.derivatives && song.derivatives.length;
 
-  if (!hasSources && !hasDerivs) {
+  // External source: link to this song on Suno
+  if (song.suno_id) {
+    const grp = el("div", { class: "derivative-group" });
+    grp.append(el("h4", {}, "External"));
+    const link = el("a", {
+      href: `https://suno.com/song/${song.suno_id}`,
+      target: "_blank",
+      class: "deriv-external-link",
+      style: "display:flex;align-items:center;gap:8px;padding:6px 8px;color:var(--accent-3);text-decoration:none;font-size:13px",
+    }, "🎵 Open on Suno ↗");
+    grp.append(link);
+    body.append(grp);
+  }
+
+  if (!hasSources && !hasDerivs && !song.suno_id) {
     body.append(el("div", { class: "empty-state" },
       "No related versions found. Filename pattern is the M1 signal — try songs with a 'v2', 'v3' sibling."));
     return;
@@ -35,9 +49,15 @@ function derivRow(s, depth, seen) {
   wrap.style.marginLeft = depth * 16 + "px";
 
   const row = el("div", { class: "derivative-row" });
-  const img = el("img", { src: s.jpg_path ? mediaUrl.cover(s.id) : "", alt: "" });
-  if (!s.jpg_path) img.style.background = "var(--bg)";
+  const hasCover = Boolean(s.jpg_path || s.video_only);
+  const img = el("img", {
+    src: hasCover ? mediaUrl.cover(s.id) : "",
+    alt: "",
+    style: hasCover ? "" : "display:none;background:var(--bg)",
+  });
+  if (hasCover) img.onerror = () => { img.style.display = "none"; };
   row.append(img);
+
 
   const info = el("div", { class: "deriv-info" });
   info.append(el("div", { class: "title" }, s.title));

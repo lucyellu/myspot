@@ -143,7 +143,12 @@ export function card(s) {
   const href = `#/song/${s.id}`;
   thumb.href = href;
   titleEl.href = href;
-  if (s.jpg_path) {
+  const c = channelColor(s.account);
+  thumb.style.background = `linear-gradient(150deg, ${c}3 0%, ${c}9 100%)`;
+
+  const hasImage = Boolean(s.jpg_path || s.video_only);
+  if (hasImage) {
+    img.style.display = "";
     img.src = mediaUrl.cover(s.id);
     const markLowres = () => {
       if (img.naturalWidth && img.naturalWidth < 200) {
@@ -153,12 +158,15 @@ export function card(s) {
     };
     if (img.complete) markLowres();
     else img.addEventListener("load", markLowres, { once: true });
+    img.onerror = () => {
+      img.style.display = "none";
+    };
   } else {
+    img.style.display = "none";
     img.removeAttribute("src");
-    const c = channelColor(s.account);
-    thumb.style.background = `linear-gradient(150deg, ${c}3 0%, ${c}9 100%)`;
   }
   img.alt = s.title || "";
+
   const quick = el("button", {
     class: "card-quick-play",
     type: "button",
