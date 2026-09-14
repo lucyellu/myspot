@@ -2146,6 +2146,21 @@ def media_audio(song_id: int, request: Request):
     return _serve_media_file(request, path, media_type=media_type)
 
 
+@app.get("/media/video/{song_id}")
+def media_video(song_id: int, request: Request):
+    row = _conn.execute(
+        "SELECT video_path FROM songs WHERE id=?", (song_id,)
+    ).fetchone()
+    if row is None or not row["video_path"]:
+        raise HTTPException(404, "video not found")
+    path = row["video_path"]
+    if not os.path.exists(path):
+        raise HTTPException(404, "video file missing")
+    if not _under(path, _media_roots()):
+        raise HTTPException(403, "forbidden")
+    return _serve_media_file(request, path, media_type="video/mp4")
+
+
 @app.get("/media/cover/{song_id}")
 def media_cover(song_id: int):
     row = _conn.execute(

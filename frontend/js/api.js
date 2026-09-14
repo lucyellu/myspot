@@ -87,6 +87,12 @@ async function req(path, opts = {}) {
 export const api = {
   stats: () => req("/api/stats"),
   channels: () => req("/api/channels"),
+  renameChannel: (account, displayName) =>
+    req(`/api/channels/${encodeURIComponent(account)}/name`, {
+      method: "PUT",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ display_name: displayName }),
+    }),
   songs: ({ account = null, q = null, tag = null, limit = 60, offset = 0, sort = "recent", dir = "desc" } = {}) => {
     // sort ∈ recent | title | version | popular | liked | gens | recent_played
     const u = new URLSearchParams();
@@ -268,6 +274,7 @@ export const api = {
 
 export const mediaUrl = {
   audio: (id) => `${BASE}/media/audio/${id}`,
+  video: (id) => `${BASE}/media/video/${id}`,
   cover: (id) => `${BASE}/media/cover/${id}`,
   asset: (id) => `${BASE}/media/asset/${id}`,
   gen: (id) => `${BASE}/media/gen/${id}`,
