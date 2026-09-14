@@ -1,0 +1,83 @@
+================================================================================
+                    SUNO LIBRARY AUDIT & SUMMARY REPORT
+================================================================================
+Generated on: 2026-09-12 03:02 UTC
+Locations:
+  - Local Audio Library : L:\Media\Audio\suno_library
+  - MySpot Database     : l:\Projects\myspot\data\myspot.db
+  - Suno API Metadata   : C:\Users\lucyl\Desktop\hold\projects\suno-dl\suno_meta.db
+  - Oracle Cloud Remote : /home/ubuntu/music (40.233.96.17)
+
+--------------------------------------------------------------------------------
+1. DISK FILESYSTEM BREAKDOWN (26,334 Total Files)
+--------------------------------------------------------------------------------
+Almost two-thirds of the total files are companion assets (cover artwork, lyrics,
+and video visualizers) that accompany the audio tracks.
+
+  Extension     Count       Description
+  ------------------------------------------------------------------------------
+  .jpg          10,557      High-resolution album art / cover images
+  .mp3           8,244      Playable audio tracks
+  .txt           4,659      Lyrics, metadata, and generation prompt logs
+  .mp4           2,869      Suno-rendered video visualizers
+  .wav               2      Lossless audio exports
+  .mid               3      MIDI exports
+
+--------------------------------------------------------------------------------
+2. UNIQUE SONGS BREAKDOWN
+--------------------------------------------------------------------------------
+Depending on how "unique" is measured:
+
+  * ~4,284 Unique Song Ideas / Titles (in suno_meta.db):
+    Across all 11,100 Suno generation clips in the API feed, there are 4,284
+    unique song titles. Whenever a song is prompted, Suno generates 2 takes
+    (Take 1 & Take 2) sharing the same title.
+
+  * ~6,938 Unique Base Songs (in myspot.db):
+    MySpot identifies derivative versions (such as v1, v2, v3, Acoustic,
+    Remix, Slowed+Reverb, and Covers) and maps them back to their base concept.
+    There are 6,938 distinct base song concepts.
+
+  * 8,244 Playable MP3 Audio Files on Disk:
+    The actual distinct audio files stored across all accounts.
+
+--------------------------------------------------------------------------------
+3. WHY THE NUMBERS MULTIPLY
+--------------------------------------------------------------------------------
+1. Companion Files (Asset Multiplier):
+   A single generated track often produces 3-4 separate files on disk sharing
+   the same base name:
+     - Song Title.mp3
+     - Song Title.jpg
+     - Song Title.txt
+     - Song Title.mp4
+
+2. Suno Twin Takes:
+   Every generation prompt produces two takes simultaneously.
+
+3. Iterations, Versions & Extensions:
+   Tracks that underwent extensive prompt engineering or extensions have
+   dozens of takes. Examples:
+     - "Cheese Grater Love Letter" : 84 takes
+     - "If Only"                   : 46 takes
+     - "Two Friends - YVR"         : 39 takes
+     - "I Suppose"                 : 34 takes
+     - "Window to the World"       : 28 takes
+
+--------------------------------------------------------------------------------
+4. ACCOUNT BREAKDOWN (Synchronized to Oracle Cloud)
+--------------------------------------------------------------------------------
+All accounts are fully synchronized between local storage and the Oracle Cloud
+Navidrome music server:
+
+  Account Folder                                Files
+  ---------------------------------------------------
+  sunosync                                        292
+  sunosync_boredlords_ualberta                  2,395
+  sunosync_elludesign                           8,326
+  sunosync_lllucylllu                           2,479
+  sunosync_lucylucontact_chaimanmeow            5,656
+  sunosync_manualthinker                        1,117
+  sunosync_primenotation                          995
+  sunosync_primenotation_2026_April_17          5,067
+================================================================================

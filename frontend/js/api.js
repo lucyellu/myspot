@@ -1,13 +1,35 @@
 // API base URL.
 //
 // Local dev: backend serves the frontend, so BASE = "" (same-origin).
-// Netlify / static host: backend lives elsewhere — set window.MYSPOT_API_BASE
-// in /static/config.js (loaded before main.js) or ?api=URL for ad-hoc.
+// Netlify / static host: defaults to Oracle Cloud 24/7 backend,
+// or window.MYSPOT_API_BASE, or localStorage, or ?api=URL for ad-hoc.
 const _qs = new URLSearchParams(location.search);
+const CLOUD_BACKEND = "https://independent-completely-precious-jewish.trycloudflare.com";
+
+// If ?api= is provided, persist it so subsequent visits on mobile keep it
+if (_qs.get("api") && typeof localStorage !== "undefined") {
+  try {
+    localStorage.setItem("myspot_api_base", _qs.get("api").replace(/\/$/, ""));
+  } catch (_) {}
+}
+
+const _isLocalHost =
+  typeof window !== "undefined" &&
+  (window.location.hostname === "localhost" ||
+   window.location.hostname === "127.0.0.1" ||
+   window.location.hostname === "0.0.0.0" ||
+   window.location.hostname === "");
+
 const BASE =
   _qs.get("api") ||
   (typeof window !== "undefined" && window.MYSPOT_API_BASE) ||
-  "";
+  (typeof localStorage !== "undefined" && localStorage.getItem("myspot_api_base")) ||
+  (!_isLocalHost ? CLOUD_BACKEND : "");
+
+if (typeof window !== "undefined") {
+  window.MYSPOT_API_BASE = BASE;
+}
+
 
 // First-failure flag — once any API call returns 404 (or fails to connect),
 // show a banner so the user understands why nothing's loading.
