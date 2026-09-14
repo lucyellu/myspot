@@ -27,6 +27,7 @@ from .config import (
 )
 from .db import init_db
 from .library import full_reindex
+from .sunometa_db import SunoMetaDB
 from .ai import (
     tool_status,
     generate_image as ai_generate_image,
@@ -49,6 +50,10 @@ from .radio import (
 app = FastAPI(title="myspot", version="0.1.0")
 _db_lock = threading.Lock()
 _conn = init_db()
+
+# Module-level SunoMetaDB for Suno handle lookups (channels → profile links)
+_suno_meta = SunoMetaDB()
+_suno_meta.load()
 
 # Allow the static frontend (deployed e.g. on Netlify) to call this backend
 # when it's exposed via Cloudflare Tunnel / Fly.io / etc. Same-origin local
@@ -263,12 +268,49 @@ def list_channels():
         "SELECT account, COUNT(*) AS song_count FROM songs GROUP BY account"
     ).fetchall()
     grouped: dict[str, int] = defaultdict(int)
+    # Collect all raw account names per canonical name for handle lookup
+    raw_accounts: dict[str, list[str]] = defaultdict(list)
     for r in rows:
-        grouped[canonical_account(r["account"])] += r["song_count"]
-    return sorted(
-        [{"account": k, "song_count": v} for k, v in grouped.items()],
-        key=lambda x: -x["song_count"],
+        cn = canonical_account(r["account"])
+        grouped[cn] += r["song_count"]
+        raw_accounts[cn].append(r["account"])
+
+    # Load display names from channel_settings
+    display_names: dict[str, str] = {}
+    try:
+        for r in _conn.execute("SELECT account, display_name FROM channel_settings"):
+            if r["display_name"]:
+                display_names[r["account"]] = r["display_name"]
+    except Exception:
+        pass  # table may not exist yet on first run
+
+    result = []
+    for k, v in grouped.items():
+        # Find the best Suno handle for this canonical channel
+        handle = None
+        for raw in raw_accounts[k]:
+            handle = _suno_meta.handle_for_account(raw)
+            if handle:
+                break
+        entry = {
+            "account": k,
+            "song_count": v,
+            "suno_handle": handle,
+            "display_name": display_names.get(k),
+        }
+        result.append(entry)
+    return sorted(result, key=lambda x: -x["song_count"])
+
+
+@app.put("/api/channels/{account}/name")
+def rename_channel(account: str, body: dict = Body(...)):
+    display_name = (body.get("display_name") or "").strip() or None
+    _conn.execute(
+        "INSERT INTO channel_settings(account, display_name) VALUES(?, ?) "
+        "ON CONFLICT(account) DO UPDATE SET display_name = excluded.display_name",
+        (account, display_name),
     )
+    return {"ok": True, "account": account, "display_name": display_name}
 
 
 # ----------------------------- Songs --------------------------------
@@ -2105,14 +2147,48 @@ def media_audio(song_id: int, request: Request):
 
 @app.get("/media/cover/{song_id}")
 def media_cover(song_id: int):
-    row = _conn.execute("SELECT jpg_path FROM songs WHERE id=?", (song_id,)).fetchone()
-    if row is None or not row["jpg_path"]:
+    row = _conn.execute(
+        "SELECT jpg_path, video_path FROM songs WHERE id=?", (song_id,)
+    ).fetchone()
+    if row is None or not (row["jpg_path"] or row["video_path"]):
         raise HTTPException(404, "cover not found")
-    if not _under(row["jpg_path"], _media_roots()):
-        raise HTTPException(403, "forbidden")
-    resp = FileResponse(row["jpg_path"])
-    resp.headers["Cache-Control"] = "no-cache"
-    return resp
+
+    # 1. Primary: Serve companion JPG if it exists
+    if row["jpg_path"] and os.path.exists(row["jpg_path"]):
+        if not _under(row["jpg_path"], _media_roots()):
+            raise HTTPException(403, "forbidden")
+        resp = FileResponse(row["jpg_path"])
+        resp.headers["Cache-Control"] = "public, max-age=86400"
+        return resp
+
+    # 2. Fallback: If video render exists, extract/cache poster frame via ffmpeg
+    if row["video_path"] and os.path.exists(row["video_path"]):
+        if not _under(row["video_path"], _media_roots()):
+            raise HTTPException(403, "forbidden")
+        thumbs_dir = DATA_DIR / "thumbs"
+        thumbs_dir.mkdir(parents=True, exist_ok=True)
+        thumb_path = thumbs_dir / f"song_{song_id}.jpg"
+        if not thumb_path.exists():
+            import subprocess
+            try:
+                subprocess.run(
+                    [
+                        "ffmpeg", "-y", "-ss", "00:00:01", "-i", row["video_path"],
+                        "-vframes", "1", "-q:v", "2", str(thumb_path)
+                    ],
+                    stdout=subprocess.DEVNULL,
+                    stderr=subprocess.DEVNULL,
+                    timeout=10,
+                )
+            except Exception:
+                pass
+        if thumb_path.exists():
+            resp = FileResponse(str(thumb_path))
+            resp.headers["Cache-Control"] = "public, max-age=86400"
+            return resp
+
+    raise HTTPException(404, "cover not found")
+
 
 
 @app.get("/media/asset/{asset_id}")

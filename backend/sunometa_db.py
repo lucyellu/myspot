@@ -37,7 +37,7 @@ class SunoMetaDB:
         conn.row_factory = sqlite3.Row
         try:
             rows = conn.execute(
-                "SELECT id, play_count, upvote_count, is_liked, "
+                "SELECT id, account, play_count, upvote_count, is_liked, "
                 "model_name, style, video_url, local_mp3, created_at, "
                 "lyrics, raw_meta FROM songs"
             ).fetchall()
@@ -89,6 +89,21 @@ class SunoMetaDB:
                 existing = self._by_local_path.get(norm)
                 if existing is None or (d.get("play_count") or 0) > (existing.get("play_count") or 0):
                     self._by_local_path[norm] = d
+
+                # Cross-platform relative path index: <account>/<filename>
+                # Allows matching between Windows paths (L:/Media/Audio/suno_library/...)
+                # and Linux server paths (/home/ubuntu/music/...)
+                parts = norm.split("/")
+                if len(parts) >= 2:
+                    rel = f"{parts[-2]}/{parts[-1]}"
+                    existing_rel = self._by_local_path.get(rel)
+                    if existing_rel is None or (d.get("play_count") or 0) > (existing_rel.get("play_count") or 0):
+                        self._by_local_path[rel] = d
+                base = parts[-1]
+                existing_b = self._by_local_path.get(base)
+                if existing_b is None or (d.get("play_count") or 0) > (existing_b.get("play_count") or 0):
+                    self._by_local_path[base] = d
+
             # Prefix index: 8-char UUID prefix used in __xxxxxxxx filename suffixes
             prefix = row["id"][:8].lower()
             existing_p = self._by_prefix.get(prefix)
@@ -111,9 +126,18 @@ class SunoMetaDB:
 
     def lookup_by_path(self, mp3_path: str) -> dict | None:
         """Look up by local_mp3 path — resolves suno_id for suno_nightly files
-        that have no library_cache.json entry."""
+        that have no library_cache.json entry. Supports cross-platform relative path joins."""
         norm = str(mp3_path).replace("\\", "/")
-        return self._by_local_path.get(norm)
+        hit = self._by_local_path.get(norm)
+        if hit:
+            return hit
+        parts = norm.split("/")
+        if len(parts) >= 2:
+            hit = self._by_local_path.get(f"{parts[-2]}/{parts[-1]}")
+            if hit:
+                return hit
+        return self._by_local_path.get(parts[-1])
+
 
     def lookup_by_filename_prefix(self, stem: str) -> dict | None:
         """Extract the 8-char UUID suffix from a filename like 'Song Title__a1b2c3d4'
@@ -126,5 +150,17 @@ class SunoMetaDB:
 
     def handle_for_account(self, account: str) -> str | None:
         """Return the Suno @handle for a given account name."""
-        return self._handle_by_account.get(account)
+        if not account:
+            return None
+        if account in self._handle_by_account:
+            return self._handle_by_account[account]
+        # Strip sunosync_ prefix and date suffixes
+        clean = re.sub(r"^sunosync_?", "", account)
+        clean = re.sub(r"_\d{4}_[A-Za-z]+_\d{1,2}$", "", clean)
+        if clean in self._handle_by_account:
+            return self._handle_by_account[clean]
+        for acct, handle in self._handle_by_account.items():
+            if acct.lower() == clean.lower() or acct.lower() == account.lower():
+                return handle
+        return None
 
