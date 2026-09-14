@@ -7,7 +7,8 @@
 **Repo:** https://github.com/lucyellu/myspot  
 **Active branch: `dev`** (pushed to origin; merged to main 2026-05-01)  
 **Local:** `C:\Users\lucyl\Desktop\myspot\`  
-**Netlify:** https://myspot-web.netlify.app — static frontend only; backend via Cloudflare tunnel.
+**Netlify:** https://myspot-web.netlify.app — static frontend auto-connected to 24/7 Oracle Cloud backend (https://independent-completely-precious-jewish.trycloudflare.com).
+
 
 ### Start the app
 ```

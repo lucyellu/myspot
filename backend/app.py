@@ -356,10 +356,8 @@ _TAG_PATTERNS = {
         "% live at %", "% live in %", "% live from %",
         "%concert%", "%performance%",
     ],
-    "acoustic":     ["%acoustic%", "%(acoustic)%", "%unplugged%"],
     "remix":        ["%remix%", "%(remix)%", "%(rmx)%"],
     "instrumental": ["%instrumental%", "%(instrumental)%", "%(inst)%"],
-    "demo":         ["%demo%", "%(demo)%"],
     "cover":        ["% cover %", "% cover", "%(cover)%", "%covered by%"],
     "remastered":   ["%remaster%", "%(remaster%)%"],
 }

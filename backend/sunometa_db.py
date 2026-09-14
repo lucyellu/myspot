@@ -1,7 +1,16 @@
 import sqlite3
+import json
+import re
 from pathlib import Path
 
 from .config import SUNO_META_DB
+
+# Section markers that indicate the prompt is actual lyrics (not just a style tag)
+_LYRIC_SECTION_RE = re.compile(
+    r"^\s*\[(?:Verse|Chorus|Bridge|Hook|Intro|Outro|Pre-Chorus|Post-Chorus|"
+    r"Refrain|Break|Interlude|Drop|Tag|Coda|Ad[ -]?lib|Rap|Spoken|End)",
+    re.IGNORECASE | re.MULTILINE,
+)
 
 
 class SunoMetaDB:
@@ -17,6 +26,7 @@ class SunoMetaDB:
         self._cache: dict[str, dict] = {}
         self._by_local_path: dict[str, dict] = {}
         self._by_prefix: dict[str, dict] = {}  # first 8 hex chars of id
+        self._handle_by_account: dict[str, str] = {}  # canonical account → suno handle
         self.loaded = False
         self.entry_count = 0
 
@@ -28,14 +38,50 @@ class SunoMetaDB:
         try:
             rows = conn.execute(
                 "SELECT id, play_count, upvote_count, is_liked, "
-                "model_name, style, video_url, local_mp3, created_at FROM songs"
+                "model_name, style, video_url, local_mp3, created_at, "
+                "lyrics, raw_meta FROM songs"
             ).fetchall()
         except Exception:
             return False
         finally:
             conn.close()
+
+        # Track handle counts per account to pick the most common one
+        handle_counts: dict[str, dict[str, int]] = {}
+
         for row in rows:
             d = dict(row)
+
+            # Extract lyrics and handle from raw_meta JSON
+            raw_meta_str = d.pop("raw_meta", None)
+            raw_lyrics = d.get("lyrics") or None  # the dedicated lyrics column
+            extracted_lyrics = None
+            suno_handle = None
+
+            if raw_meta_str:
+                try:
+                    raw_meta = json.loads(raw_meta_str)
+                    suno_handle = raw_meta.get("handle") or None
+                    md = raw_meta.get("metadata") or {}
+
+                    # Extract lyrics from metadata.prompt if not instrumental
+                    if not md.get("make_instrumental"):
+                        prompt = md.get("prompt") or ""
+                        if prompt and _LYRIC_SECTION_RE.search(prompt):
+                            extracted_lyrics = prompt
+                except (json.JSONDecodeError, TypeError):
+                    pass
+
+            # Use dedicated lyrics column if populated, else extracted lyrics
+            d["lyrics"] = raw_lyrics or extracted_lyrics
+            d["suno_handle"] = suno_handle
+
+            # Track handles per account for profile link resolution
+            account = d.get("account")
+            if account and suno_handle:
+                handle_counts.setdefault(account, {})
+                handle_counts[account][suno_handle] = handle_counts[account].get(suno_handle, 0) + 1
+
             self._cache[row["id"]] = d
             # Path index: keep highest play_count when multiple songs share a path
             if row["local_mp3"]:
@@ -48,6 +94,12 @@ class SunoMetaDB:
             existing_p = self._by_prefix.get(prefix)
             if existing_p is None or (d.get("play_count") or 0) > (existing_p.get("play_count") or 0):
                 self._by_prefix[prefix] = d
+
+        # Resolve the most common handle per account
+        for account, counts in handle_counts.items():
+            best = max(counts, key=counts.get)
+            self._handle_by_account[account] = best
+
         self.entry_count = len(self._cache)
         self.loaded = True
         return True
@@ -71,3 +123,8 @@ class SunoMetaDB:
         if not m:
             return None
         return self._by_prefix.get(m.group(1).lower())
+
+    def handle_for_account(self, account: str) -> str | None:
+        """Return the Suno @handle for a given account name."""
+        return self._handle_by_account.get(account)
+
