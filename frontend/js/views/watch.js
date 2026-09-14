@@ -239,6 +239,8 @@ export async function renderWatch(songId) {
 
   bindTransport(audio, song, audioSignal);
   bindKaraoke(audio, song, audioSignal);
+  bindStageAspect();
+  bindVideoToggle(song);
   const lcdBpm = document.getElementById("lcd-bpm");
   if (lcdBpm && song.bpm) { lcdBpm.textContent = song.bpm + " BPM"; lcdBpm.hidden = false; }
   const lcdVer = document.getElementById("lcd-version");
@@ -265,6 +267,15 @@ export async function renderWatch(songId) {
     const d = document.getElementById("meta-date");
     d.textContent = song.suno_date;
     d.hidden = false;
+  }
+  const sunoChip = document.getElementById("meta-suno");
+  if (sunoChip) {
+    if (song.suno_id) {
+      sunoChip.href = `https://suno.com/song/${song.suno_id}`;
+      sunoChip.hidden = false;
+    } else {
+      sunoChip.hidden = true;
+    }
   }
   document.getElementById("meta-genre").textContent = song.genre || "";
 
@@ -982,6 +993,32 @@ function bindTransport(audio, song, signal) {
   vol.oninput = () => { audio.volume = Number(vol.value) / 100; if (audio.volume > 0) audio.muted = false; };
   muteBtn.onclick = () => { audio.muted = !audio.muted; muteBtn.textContent = audio.muted ? "🔇" : "🔊"; };
 
+  // Synchronize any active stage video with the global audio playback
+  const syncVisualVideo = () => {
+    const v = document.querySelector("#visual video");
+    if (!v) return;
+    if (audio.paused) {
+      v.pause();
+    } else {
+      if (Math.abs(v.currentTime - audio.currentTime) > 0.35) {
+        v.currentTime = audio.currentTime;
+      }
+      v.play().catch(() => {});
+    }
+  };
+  audio.addEventListener("play", syncVisualVideo, { signal });
+  audio.addEventListener("pause", syncVisualVideo, { signal });
+  audio.addEventListener("seeked", () => {
+    const v = document.querySelector("#visual video");
+    if (v) v.currentTime = audio.currentTime;
+  }, { signal });
+  audio.addEventListener("timeupdate", () => {
+    const v = document.querySelector("#visual video");
+    if (v && !audio.paused && Math.abs(v.currentTime - audio.currentTime) > 0.4) {
+      v.currentTime = audio.currentTime;
+    }
+  }, { signal });
+
   prevBtn.onclick = () => {
     const sources = song.sources || [];
     if (sources.length) { queueAutoplayForRoute(); location.hash = `#/song/${sources[0].id}`; }
@@ -991,6 +1028,72 @@ function bindTransport(audio, song, signal) {
     const next = _related[0];
     if (next) { queueAutoplayForRoute(); location.hash = `#/song/${next.id}`; }
     else toast("No next song.");
+  };
+}
+
+let _preferArtMode = false;
+let _stageAspect = localStorage.getItem("myspot_stage_aspect") || "16:9";
+
+function applyStageAspect(stage, aspectBtn) {
+  if (!stage) return;
+  stage.classList.remove("portrait", "square");
+  if (_stageAspect === "9:16") {
+    stage.classList.add("portrait");
+    if (aspectBtn) {
+      aspectBtn.textContent = "9:16 📱";
+      aspectBtn.classList.add("on");
+      aspectBtn.title = "Stage Aspect: 9:16 Portrait (click to cycle: 1:1 / 16:9)";
+    }
+  } else if (_stageAspect === "1:1") {
+    stage.classList.add("square");
+    if (aspectBtn) {
+      aspectBtn.textContent = "1:1 ⏹";
+      aspectBtn.classList.add("on");
+      aspectBtn.title = "Stage Aspect: 1:1 Square (click to cycle: 16:9 / 9:16)";
+    }
+  } else {
+    if (aspectBtn) {
+      aspectBtn.textContent = "16:9 🖥";
+      aspectBtn.classList.remove("on");
+      aspectBtn.title = "Stage Aspect: 16:9 Landscape (click to cycle: 9:16 / 1:1)";
+    }
+  }
+}
+
+function bindStageAspect() {
+  const stage = document.querySelector(".player-stage");
+  const aspectBtn = document.getElementById("tp-aspect");
+  if (!stage || !aspectBtn) return;
+  applyStageAspect(stage, aspectBtn);
+  aspectBtn.onclick = () => {
+    if (_stageAspect === "16:9") _stageAspect = "9:16";
+    else if (_stageAspect === "9:16") _stageAspect = "1:1";
+    else _stageAspect = "16:9";
+    try { localStorage.setItem("myspot_stage_aspect", _stageAspect); } catch { /* ignore */ }
+    applyStageAspect(stage, aspectBtn);
+  };
+}
+
+function bindVideoToggle(song) {
+  const videoBtn = document.getElementById("tp-video-toggle");
+  if (!videoBtn) return;
+  const hasVideo = Boolean(song && (song.video_path || song.video_only));
+  if (!hasVideo) {
+    videoBtn.hidden = true;
+    return;
+  }
+  videoBtn.hidden = false;
+  const updateBtn = () => {
+    videoBtn.textContent = _preferArtMode ? "ART 🖼" : "VIDEO 🎬";
+    videoBtn.classList.toggle("on", !_preferArtMode);
+    videoBtn.title = _preferArtMode ? "Showing album art (click for video)" : "Showing video (click for album art)";
+  };
+  updateBtn();
+  videoBtn.onclick = () => {
+    _preferArtMode = !_preferArtMode;
+    updateBtn();
+    const visual = document.getElementById("visual");
+    if (visual) paintVisual(visual, song);
   };
 }
 
@@ -1077,6 +1180,32 @@ function paintVisual(visual, song) {
     // First in track plays first; auto-advance handled by audio:timeupdate.
     _activeClipIdx = 0;
     showClip(firstGen);
+    return;
+  }
+
+  const hasVideo = Boolean(song.video_path || song.video_only);
+  if (hasVideo && !_preferArtMode) {
+    visual.classList.add("with-art", "full-art");
+    const vUrl = mediaUrl.video(song.id);
+    const bg = el("div", { class: "blur-bg" });
+    if (song.jpg_path) bg.style.backgroundImage = `url(${mediaUrl.cover(song.id)})`;
+    visual.append(bg);
+
+    const wrap = el("div", { class: "center-art" });
+    const audio = getCurrentAudio();
+    const vid = el("video", {
+      src: vUrl,
+      autoplay: audio && !audio.paused,
+      muted: true,
+      loop: true,
+      playsinline: true,
+    });
+    if (audio && !audio.paused && audio.currentTime) {
+      vid.currentTime = audio.currentTime;
+      vid.play().catch(() => {});
+    }
+    wrap.append(vid);
+    visual.append(wrap);
     return;
   }
 

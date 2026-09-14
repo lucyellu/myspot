@@ -193,6 +193,11 @@ CREATE TABLE IF NOT EXISTS clips (
 );
 CREATE INDEX IF NOT EXISTS idx_clips_edit ON clips(edit_id);
 
+CREATE TABLE IF NOT EXISTS channel_settings (
+    account TEXT PRIMARY KEY,
+    display_name TEXT
+);
+
 CREATE VIRTUAL TABLE IF NOT EXISTS lyric_fts USING fts5(
     text, song_id UNINDEXED
 );

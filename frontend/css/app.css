@@ -273,7 +273,7 @@ input, select, textarea { font-family: inherit; }
 }
 .drawer-section[open] > summary { margin-bottom: 6px; }
 .channel-list a {
-  display: block;
+  display: flex; align-items: center; gap: 0;
   padding: 7px 10px;
   border-radius: var(--radius-sm);
   font-family: var(--font-mono);
@@ -287,8 +287,9 @@ input, select, textarea { font-family: inherit; }
   background: var(--ink); color: var(--accent);
 }
 .channel-list .count {
-  float: right; font-variant-numeric: tabular-nums;
-  color: var(--ink-mute); font-size: 13px;
+  order: 99;
+  margin-left: auto; font-variant-numeric: tabular-nums;
+  color: var(--ink-mute); font-size: 13px; flex-shrink: 0; padding-left: 6px;
 }
 .channel-list a.active .count { color: var(--lcd-dim); }
 
@@ -1653,6 +1654,12 @@ main {
   width: 7px; height: 7px; border-radius: 50%;
   background: #888; margin-right: 4px; vertical-align: middle;
 }
+.channel-label { flex: 0 1 auto; min-width: 0; overflow: hidden; text-overflow: ellipsis; }
+.channel-suno-link {
+  flex-shrink: 0; margin-left: 4px; padding: 0 3px;
+  font-size: 11px; opacity: 0.5; text-decoration: none; color: var(--ink-mute);
+}
+.channel-suno-link:hover { opacity: 1; color: var(--accent); }
 
 /* ========== Watch view ========== */
 .watch {
@@ -1807,6 +1814,19 @@ main {
   width: 100%;
   background-color: #0d0f0a;
   overflow: hidden;
+  transition: aspect-ratio 0.25s ease, max-width 0.25s ease;
+}
+.player-stage.portrait {
+  aspect-ratio: 9/16;
+  max-width: 440px;
+  max-height: 72vh;
+  margin: 0 auto;
+}
+.player-stage.square {
+  aspect-ratio: 1/1;
+  max-width: 540px;
+  max-height: 65vh;
+  margin: 0 auto;
 }
 .player.drag-over .drop-overlay { display: flex; }
 .drop-overlay {
@@ -2424,6 +2444,21 @@ main {
 .chip-btn { cursor: pointer; }
 .chip-btn:hover { background: var(--bg-hover); }
 .chip-btn.liked { background: var(--ink); color: var(--accent-2); }
+.chip.chip-suno {
+  background: var(--accent-2, #e056fd);
+  color: #fff;
+  font-weight: 700;
+  text-decoration: none;
+  border-color: rgba(255, 255, 255, 0.4);
+  box-shadow: 0 0 8px rgba(224, 86, 253, 0.35);
+  transition: transform 0.15s ease, filter 0.15s ease, box-shadow 0.15s ease;
+}
+.chip.chip-suno:hover {
+  filter: brightness(1.2);
+  transform: translateY(-1px);
+  box-shadow: 0 0 14px rgba(224, 86, 253, 0.6);
+  color: #fff;
+}
 .genre {
   font-family: var(--font-mono); font-size: 14px;
   color: var(--ink-mute); letter-spacing: 0.04em;

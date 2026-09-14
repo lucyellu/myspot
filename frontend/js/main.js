@@ -17,14 +17,57 @@ async function loadChannels() {
     if (countEl) countEl.textContent = String(channels.length);
     const all = document.createElement("a");
     all.href = "#/";
-    all.innerHTML = `<span class="count">${channels.reduce((a, c) => a + c.song_count, 0).toLocaleString()}</span>All`;
+    all.innerHTML = `All<span class="count">${channels.reduce((a, c) => a + c.song_count, 0).toLocaleString()}</span>`;
     list.append(all);
     for (const c of channels) {
       const a = document.createElement("a");
       a.href = `#/channel/${encodeURIComponent(c.account)}`;
       a.dataset.account = c.account;
       const color = channelColor(c.account);
-      a.innerHTML = `<span class="channel-dot" style="background:${color}"></span><span class="count">${c.song_count.toLocaleString()}</span>${c.account}`;
+      const label = c.display_name || c.account;
+
+      let sunoLink = "";
+      if (c.suno_handle) {
+        sunoLink = `<a class="channel-suno-link" href="https://suno.com/@${c.suno_handle}" target="_blank" title="Open Suno profile @${c.suno_handle}" onclick="event.stopPropagation()">↗</a>`;
+      }
+
+      a.innerHTML = `<span class="channel-dot" style="background:${color}"></span><span class="channel-label">${label}</span>${sunoLink}<span class="count">${c.song_count.toLocaleString()}</span>`;
+
+      // Double-click to rename
+      const labelEl = a.querySelector(".channel-label");
+      if (labelEl) {
+        labelEl.addEventListener("dblclick", (e) => {
+          e.preventDefault();
+          e.stopPropagation();
+          const input = document.createElement("input");
+          input.type = "text";
+          input.className = "channel-rename-input";
+          input.value = c.display_name || c.account;
+          input.style.cssText = "width:80px;font-size:11px;padding:1px 4px;border:1px solid var(--accent-3);background:var(--bg);color:var(--fg);border-radius:3px";
+          labelEl.replaceWith(input);
+          input.focus();
+          input.select();
+          const commit = async () => {
+            const newName = input.value.trim();
+            // If cleared back to original account name or empty, clear custom name
+            const displayName = (newName && newName !== c.account) ? newName : "";
+            try {
+              await api.renameChannel(c.account, displayName);
+              toast(displayName ? `Renamed to "${displayName}"` : "Name reset");
+              loadChannels(); // refresh
+            } catch (err) {
+              toast("Rename failed: " + err.message);
+              loadChannels();
+            }
+          };
+          input.addEventListener("keydown", (ke) => {
+            if (ke.key === "Enter") { ke.preventDefault(); commit(); }
+            if (ke.key === "Escape") { ke.preventDefault(); loadChannels(); }
+          });
+          input.addEventListener("blur", commit);
+        });
+      }
+
       list.append(a);
     }
   } catch (e) {
