@@ -223,12 +223,24 @@ def test_ai_registry():
     check("unknown prompt model errors", "error" in enhance_prompt("not-a-model", {"title": "X"}))
 
 
+def test_video_filter():
+    print("[video filter]")
+    from backend.app import list_songs
+    res_all = list_songs(limit=10)
+    check("list_songs returns items", "items" in res_all)
+    res_vid = list_songs(has_video=True, limit=10)
+    check("list_songs with has_video=True works", "items" in res_vid)
+    for s in res_vid["items"]:
+        check("returned song has video", s.get("has_video") is True or s.get("video_path") is not None or s.get("video_only") is True)
+
+
 def main():
     test_lyrics_parser()
     test_derivatives()
     test_cache_lookup()
     test_indexer_roundtrip()
     test_ai_registry()
+    test_video_filter()
     print()
     print(f"PASSED: {PASSED}")
     print(f"FAILED: {len(FAILED)}")

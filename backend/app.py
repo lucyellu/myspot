@@ -321,11 +321,17 @@ def list_songs(
     account: str | None = None,
     q: str | None = None,
     tag: str | None = None,
+    has_video: bool | None = None,
     limit: int = Query(60, ge=1, le=500),
     offset: int = Query(0, ge=0),
     sort: str = Query("recent", regex="^(recent|title|version|popular|liked|gens|recent_played)$"),
     dir: str = Query("desc", regex="^(asc|desc)$"),
 ):
+    if hasattr(sort, "default"): sort = sort.default
+    if hasattr(dir, "default"): dir = dir.default
+    if hasattr(limit, "default"): limit = limit.default
+    if hasattr(offset, "default"): offset = offset.default
+
     where = []
     args: list = []
     if account:
@@ -346,6 +352,16 @@ def list_songs(
         if clause:
             where.append(clause)
             args.extend(params)
+    if has_video is not None:
+        video_sql = (
+            "(s.video_path IS NOT NULL OR EXISTS("
+            "SELECT 1 FROM gens g WHERE g.song_id = s.id AND g.status='completed' "
+            "AND (g.kind='video' OR g.file_path LIKE '%.mp4' OR g.file_path LIKE '%.webm')))"
+        )
+        if has_video:
+            where.append(video_sql)
+        else:
+            where.append(f"NOT {video_sql}")
 
     D, A = ("DESC", "ASC") if dir == "desc" else ("ASC", "DESC")
     order = {
@@ -362,8 +378,12 @@ def list_songs(
 
     sql = f"""
         SELECT s.id, s.title, s.base_title, s.version, s.account, s.genre, s.bpm,
-               s.duration, s.suno_date, s.jpg_path, s.suno_id IS NOT NULL AS has_cache,
+               s.duration, s.suno_date, s.jpg_path, s.video_path, s.suno_id IS NOT NULL AS has_cache,
                s.mp3_path IS NULL AND s.video_path IS NOT NULL AS video_only,
+               (s.video_path IS NOT NULL OR EXISTS(
+                   SELECT 1 FROM gens g WHERE g.song_id = s.id AND g.status='completed'
+                   AND (g.kind='video' OR g.file_path LIKE '%.mp4' OR g.file_path LIKE '%.webm')
+               )) AS has_video,
                s.liked, s.suno_play_count, s.suno_upvote_count, s.suno_is_liked,
                s.suno_model, s.suno_style,
                (SELECT COUNT(*) FROM lyric_lines ll WHERE ll.song_id = s.id) AS lyric_count,
@@ -2407,6 +2427,11 @@ def stats():
     g = _conn.execute
     return {
         "songs": g("SELECT COUNT(*) FROM songs").fetchone()[0],
+        "videos": g(
+            "SELECT COUNT(*) FROM songs s WHERE s.video_path IS NOT NULL OR EXISTS("
+            "SELECT 1 FROM gens g WHERE g.song_id = s.id AND g.status='completed' "
+            "AND (g.kind='video' OR g.file_path LIKE '%.mp4' OR g.file_path LIKE '%.webm'))"
+        ).fetchone()[0],
         "lyric_lines": g("SELECT COUNT(*) FROM lyric_lines").fetchone()[0],
         "relationships": g("SELECT COUNT(*) FROM relationships").fetchone()[0],
         "assets": g("SELECT COUNT(*) FROM assets").fetchone()[0],

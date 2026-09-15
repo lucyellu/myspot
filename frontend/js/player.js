@@ -1,12 +1,62 @@
 import { api, mediaUrl } from "./api.js";
 import { fmtDuration, fmtAccount, toast } from "./util.js";
 
+const SESSION_KEY = "myspot.playlist.v2";
+
 let _audio = null;
 let _song = null;
 let _related = [];
 let _sources = [];
+let _playlist = [];
+let _playlistIndex = -1;
+let _query = null;
+let _contextName = "";
+let _isFetchingMore = false;
 let _routeAutoplay = false;
 let _scrubbing = false;
+
+function loadPersistedPlaylist() {
+  try {
+    const raw = sessionStorage.getItem(SESSION_KEY);
+    if (!raw) return;
+    const data = JSON.parse(raw);
+    if (Array.isArray(data.playlist)) _playlist = data.playlist;
+    if (typeof data.index === "number") _playlistIndex = data.index;
+    if (data.query) _query = data.query;
+    if (data.contextName) _contextName = data.contextName;
+  } catch { /* ignore */ }
+}
+
+function savePersistedPlaylist() {
+  try {
+    const items = _playlist.slice(0, 200).map((s) => ({
+      id: s.id,
+      title: s.title,
+      account: s.account,
+      duration: s.duration,
+      jpg_path: s.jpg_path,
+      video_path: s.video_path,
+      video_only: s.video_only,
+      version: s.version,
+      genre: s.genre,
+      liked: s.liked,
+      suno_id: s.suno_id,
+      suno_date: s.suno_date,
+      bpm: s.bpm,
+    }));
+    sessionStorage.setItem(
+      SESSION_KEY,
+      JSON.stringify({
+        playlist: items,
+        index: _playlistIndex,
+        query: _query,
+        contextName: _contextName,
+      })
+    );
+  } catch { /* ignore */ }
+}
+
+loadPersistedPlaylist();
 
 function ensureAudio() {
   if (!_audio) {
@@ -55,7 +105,7 @@ function updateMediaSession() {
   navigator.mediaSession.metadata = new MediaMetadata({
     title: _song.title || "Untitled",
     artist: fmtAccount(_song.account),
-    album: "myspot",
+    album: _contextName || "myspot",
     artwork,
   });
 }
@@ -98,6 +148,117 @@ async function hydrateRelated(songId) {
   catch { _related = []; }
 }
 
+export function setPlaylistContext({ playlist = [], index = -1, query = null, contextName = "", song = null } = {}) {
+  if (Array.isArray(playlist) && playlist.length > 0) {
+    _playlist = [...playlist];
+    if (song) {
+      const foundIdx = _playlist.findIndex((s) => s.id === song.id);
+      _playlistIndex = foundIdx >= 0 ? foundIdx : (index >= 0 ? index : 0);
+    } else {
+      _playlistIndex = index >= 0 ? index : 0;
+    }
+  }
+  if (query !== undefined) _query = query;
+  if (contextName !== undefined) _contextName = contextName;
+  savePersistedPlaylist();
+}
+
+export function appendPlaylistSongs(songs = [], { total = null } = {}) {
+  if (!Array.isArray(songs) || !songs.length) return;
+  const existingIds = new Set(_playlist.map((s) => s.id));
+  const newItems = songs.filter((s) => !existingIds.has(s.id));
+  if (newItems.length) {
+    _playlist.push(...newItems);
+  }
+  if (total !== null && _query) {
+    _query.total = total;
+  }
+  savePersistedPlaylist();
+}
+
+export function getPlaylistContext() {
+  return {
+    playlist: _playlist,
+    index: _playlistIndex,
+    query: _query,
+    contextName: _contextName,
+  };
+}
+
+export function getUpcomingSongs(limit = 24) {
+  if (_playlist.length > 0 && _playlistIndex >= 0) {
+    const upcoming = _playlist.slice(_playlistIndex + 1, _playlistIndex + 1 + limit);
+    if (upcoming.length < limit && _query && (_query.total == null || _playlist.length < _query.total) && !_isFetchingMore) {
+      prefetchNextBatch();
+    }
+    return upcoming;
+  }
+  return _related.slice(0, limit);
+}
+
+async function prefetchNextBatch() {
+  if (!_query || _isFetchingMore) return;
+  _isFetchingMore = true;
+  try {
+    const offset = _playlist.length;
+    const res = await api.songs({ ..._query, offset, limit: 60 });
+    if (res && res.items && res.items.length) {
+      appendPlaylistSongs(res.items, { total: res.total });
+    }
+  } catch { /* ignore */ }
+  finally { _isFetchingMore = false; }
+}
+
+export async function getNextSongAsync() {
+  if (_playlist.length > 0) {
+    if (_playlistIndex + 1 < _playlist.length) {
+      return _playlist[_playlistIndex + 1];
+    }
+    if (_query && (_query.total == null || _playlist.length < _query.total)) {
+      await prefetchNextBatch();
+      if (_playlistIndex + 1 < _playlist.length) {
+        return _playlist[_playlistIndex + 1];
+      }
+    }
+    return null;
+  }
+  return _related[0] || null;
+}
+
+export function getPrevSong() {
+  if (_playlist.length > 0 && _playlistIndex > 0) {
+    return _playlist[_playlistIndex - 1];
+  }
+  if (_sources && _sources.length) {
+    return _sources[0];
+  }
+  return null;
+}
+
+export async function playNextSong({ autoplay = true } = {}) {
+  const audio = ensureAudio();
+  const next = await getNextSongAsync();
+  if (next) {
+    _routeAutoplay = autoplay || !audio.paused;
+    location.hash = `#/song/${next.id}`;
+    return next;
+  }
+  toast("No next song.");
+  return null;
+}
+
+export function playPrevSong({ autoplay = true } = {}) {
+  const audio = ensureAudio();
+  const prev = getPrevSong();
+  if (prev) {
+    _routeAutoplay = autoplay || !audio.paused;
+    location.hash = `#/song/${prev.id}`;
+    return prev;
+  }
+  toast("No previous song.");
+  return null;
+}
+
 export function initPersistentPlayer() {
   const audio = ensureAudio();
   const p = mini();
@@ -114,18 +275,8 @@ export function initPersistentPlayer() {
     toast("Playback stopped");
   };
   p.close.onclick = () => stopAndClear();
-  p.prev.onclick = () => {
-    const prev = _sources[0];
-    if (!prev) return toast("No previous song.");
-    _routeAutoplay = !audio.paused;
-    location.hash = `#/song/${prev.id}`;
-  };
-  p.next.onclick = () => {
-    const next = _related[0];
-    if (!next) return toast("No next song.");
-    _routeAutoplay = !audio.paused;
-    location.hash = `#/song/${next.id}`;
-  };
+  p.prev.onclick = () => playPrevSong();
+  p.next.onclick = () => playNextSong();
   p.mute.onclick = () => {
     audio.muted = !audio.muted;
     renderMini();
@@ -156,13 +307,7 @@ export function initPersistentPlayer() {
   audio.addEventListener("loadedmetadata", updateProgress);
   audio.addEventListener("timeupdate", updateProgress);
   audio.addEventListener("ended", () => {
-    const next = _related[0];
-    if (next) {
-      _routeAutoplay = true;
-      location.hash = `#/song/${next.id}`;
-    } else {
-      renderMini();
-    }
+    playNextSong({ autoplay: true });
   });
 
   if ("mediaSession" in navigator) {
@@ -176,8 +321,8 @@ export function initPersistentPlayer() {
       audio.currentTime = 0;
       renderMini();
     });
-    setAction("nexttrack", () => p.next.click());
-    setAction("previoustrack", () => p.prev.click());
+    setAction("nexttrack", () => playNextSong());
+    setAction("previoustrack", () => playPrevSong());
   }
 
   showMini(false);
@@ -187,9 +332,22 @@ export function queueAutoplayForRoute() {
   _routeAutoplay = true;
 }
 
-export function setPlayerContext({ related = null, sources = null } = {}) {
+export function setPlayerContext({ related = null, sources = null, playlist = null, index = -1, query = null, contextName = "" } = {}) {
   if (related) _related = related;
   if (sources) _sources = sources;
+  if (playlist) {
+    _playlist = playlist;
+    _playlistIndex = index >= 0 ? index : 0;
+    _query = query;
+    _contextName = contextName;
+    savePersistedPlaylist();
+  } else if (related && !playlist) {
+    _playlist = [];
+    _playlistIndex = -1;
+    _query = null;
+    _contextName = contextName || "";
+    savePersistedPlaylist();
+  }
 }
 
 export function loadPlayerSong(song, { autoplay = false, preserveQueue = false } = {}) {
@@ -200,6 +358,15 @@ export function loadPlayerSong(song, { autoplay = false, preserveQueue = false }
 
   _song = song;
   _sources = song.sources || _sources || [];
+
+  if (_playlist.length > 0) {
+    const idx = _playlist.findIndex((s) => s.id === song.id);
+    if (idx >= 0) {
+      _playlistIndex = idx;
+      savePersistedPlaylist();
+    }
+  }
+
   if (!sameSong) {
     audio.src = nextSrc;
     audio.load();
@@ -220,10 +387,15 @@ export function playSongNow(song) {
   return loadPlayerSong(song, { autoplay: true });
 }
 
-export function playQueuedSong(song, { related = [], sources = [] } = {}) {
+export function playQueuedSong(song, { related = [], sources = [], playlist = null, index = -1 } = {}) {
   const audio = loadPlayerSong(song, { autoplay: true, preserveQueue: true });
   _related = related;
   _sources = sources;
+  if (playlist) {
+    _playlist = playlist;
+    _playlistIndex = index >= 0 ? index : 0;
+    savePersistedPlaylist();
+  }
   renderMini();
   return audio;
 }

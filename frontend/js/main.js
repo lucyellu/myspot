@@ -17,6 +17,7 @@ async function loadChannels() {
     if (countEl) countEl.textContent = String(channels.length);
     const all = document.createElement("a");
     all.href = "#/";
+    all.dataset.account = "";
     all.innerHTML = `All<span class="count">${channels.reduce((a, c) => a + c.song_count, 0).toLocaleString()}</span>`;
     list.append(all);
     for (const c of channels) {
@@ -70,6 +71,7 @@ async function loadChannels() {
 
       list.append(a);
     }
+    highlightActiveChannel(_currentChannelAccount);
   } catch (e) {
     list.innerHTML = `<div class="muted">Failed to load channels: ${e.message}</div>`;
   }
@@ -137,39 +139,53 @@ async function loadStats() {
     const s = await api.stats();
     document.getElementById("topbar-stats").textContent =
       `${s.songs.toLocaleString()} songs · ${s.assets.toLocaleString()} assets · ${s.relationships.toLocaleString()} rels`;
+    const vEl = document.getElementById("drawer-videos-n");
+    if (vEl && typeof s.videos === "number") {
+      vEl.textContent = s.videos.toLocaleString();
+    }
   } catch { /* ignore */ }
 }
 
+let _currentChannelAccount = "";
 function highlightActiveChannel(account) {
+  _currentChannelAccount = account !== undefined && account !== null ? (account || "") : null;
   const list = document.getElementById("channel-list");
-  list.querySelectorAll("a").forEach((a) => a.classList.toggle(
-    "active",
-    (a.dataset.account || "") === (account || "")
-  ));
+  if (list) {
+    list.querySelectorAll("a").forEach((a) => a.classList.toggle(
+      "active",
+      _currentChannelAccount !== null && (a.dataset.account !== undefined ? a.dataset.account : "") === _currentChannelAccount
+    ));
+  }
+  const vLink = document.getElementById("smart-link-videos");
+  if (vLink) vLink.classList.toggle("active", location.hash === "#/videos");
 }
 
 async function route() {
   const hash = location.hash.replace(/^#/, "") || "/";
   const parts = hash.split("/").filter(Boolean);
   if (parts.length === 0) {
-    highlightActiveChannel(null);
+    highlightActiveChannel("");
     await renderHome();
+  } else if (parts[0] === "videos") {
+    highlightActiveChannel(null);
+    await renderHome({ has_video: true });
   } else if (parts[0] === "channel" && parts[1]) {
     const account = decodeURIComponent(parts[1]);
     highlightActiveChannel(account);
     await renderHome({ account });
   } else if (parts[0] === "song" && parts[1]) {
-    highlightActiveChannel(null);
     await renderWatch(parseInt(parts[1], 10));
   } else if (parts[0] === "radio") {
     highlightActiveChannel(null);
     await renderRadio();
   } else if (parts[0] === "search" && parts[1]) {
+    highlightActiveChannel(null);
     await renderHome({ q: decodeURIComponent(parts[1]) });
   } else if (parts[0] === "tag" && parts[1]) {
     highlightActiveChannel(null);
     await renderHome({ tag: decodeURIComponent(parts[1]) });
   } else if (parts[0] === "assets") {
+    highlightActiveChannel(null);
     const folder = parts[1] ? decodeURIComponent(parts[1]) : null;
     await renderAssets({ folder });
   } else if (parts[0] === "live-boards") {
@@ -177,6 +193,7 @@ async function route() {
     const id = parts[1] ? decodeURIComponent(parts.slice(1).join("/")) : null;
     await renderLiveBoards({ id });
   } else {
+    highlightActiveChannel("");
     await renderHome();
   }
 }
