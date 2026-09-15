@@ -3,7 +3,7 @@ import { fmtDuration, fmtAccount, el, clear, toast, channelColor } from "../util
 import { renderTab, currentTab, setSong } from "../sidepanel.js?v=lyric-export1";
 import { attachHalftone } from "../components/halftone.js";
 import { applyDesignSettings } from "../tabs/design.js";
-import { loadPlayerSong, setPlayerContext, queueAutoplayForRoute, getAudio } from "../player.js?v=radio-longform1";
+import { loadPlayerSong, setPlayerContext, queueAutoplayForRoute, getAudio, playNextSong, playPrevSong, getUpcomingSongs, getPlaylistContext } from "../player.js?v=radio-longform1";
 
 let currentAudio = null;
 let _related = [];
@@ -311,9 +311,17 @@ export async function renderWatch(songId) {
   // Up next
   const upNext = document.getElementById("up-next");
   clear(upNext);
-  _related = await api.related(song.id, 24);
-  setPlayerContext({ related: _related, sources: song.sources || [] });
-  for (const r of _related) upNext.append(upRow(r));
+  let upcoming = getUpcomingSongs(24);
+  if (!upcoming.length) {
+    try {
+      _related = await api.related(song.id, 24);
+    } catch {
+      _related = [];
+    }
+    setPlayerContext({ related: _related, sources: song.sources || [] });
+    upcoming = _related;
+  }
+  for (const r of upcoming) upNext.append(upRow(r));
 
   // Sidepanel
   setSong(song);
@@ -931,13 +939,10 @@ function bindShortcuts(song) {
       e.preventDefault(); audio.muted = !audio.muted;
     } else if (k === "n") {
       e.preventDefault();
-      const nx = _related[0];
-      if (nx) { queueAutoplayForRoute(); location.hash = `#/song/${nx.id}`; } else toast("No next song.");
+      playNextSong();
     } else if (k === "p") {
       e.preventDefault();
-      const sources = song.sources || [];
-      if (sources.length) { queueAutoplayForRoute(); location.hash = `#/song/${sources[0].id}`; }
-      else toast("No source/parent.");
+      playPrevSong();
     } else if (k >= "1" && k <= "7") {
       e.preventDefault();
       const idx = parseInt(k, 10) - 1;
@@ -1019,16 +1024,8 @@ function bindTransport(audio, song, signal) {
     }
   }, { signal });
 
-  prevBtn.onclick = () => {
-    const sources = song.sources || [];
-    if (sources.length) { queueAutoplayForRoute(); location.hash = `#/song/${sources[0].id}`; }
-    else toast("No source/parent.");
-  };
-  nextBtn.onclick = () => {
-    const next = _related[0];
-    if (next) { queueAutoplayForRoute(); location.hash = `#/song/${next.id}`; }
-    else toast("No next song.");
-  };
+  prevBtn.onclick = () => playPrevSong();
+  nextBtn.onclick = () => playNextSong();
 }
 
 let _preferArtMode = false;

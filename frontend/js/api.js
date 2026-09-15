@@ -93,12 +93,13 @@ export const api = {
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ display_name: displayName }),
     }),
-  songs: ({ account = null, q = null, tag = null, limit = 60, offset = 0, sort = "recent", dir = "desc" } = {}) => {
+  songs: ({ account = null, q = null, tag = null, has_video = null, limit = 60, offset = 0, sort = "recent", dir = "desc" } = {}) => {
     // sort ∈ recent | title | version | popular | liked | gens | recent_played
     const u = new URLSearchParams();
     if (account) u.set("account", account);
     if (q) u.set("q", q);
     if (tag) u.set("tag", tag);
+    if (has_video !== null && has_video !== undefined) u.set("has_video", has_video ? "true" : "false");
     u.set("limit", limit);
     u.set("offset", offset);
     u.set("sort", sort);

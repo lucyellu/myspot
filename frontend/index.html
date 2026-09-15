@@ -106,17 +106,18 @@
 </div>
 
 <aside class="sidedrawer" id="sidedrawer">
-  <details class="drawer-section" id="drawer-smart" open>
+  <details class="drawer-section" id="drawer-channels" open>
+    <summary><span class="drawer-section-h">CHANNELS</span><span class="drawer-section-n" id="drawer-channels-n"></span></summary>
+    <div id="channel-list" class="channel-list"></div>
+  </details>
+  <details class="drawer-section" id="drawer-smart">
     <summary><span class="drawer-section-h">SMART</span><span class="drawer-section-n" id="drawer-smart-n"></span></summary>
     <div class="channel-list">
+      <a href="#/videos" id="smart-link-videos"><span class="count" id="drawer-videos-n"></span>🎬 VIDEOS</a>
       <a href="#/radio"><span class="count">HOST</span>AI RADIO</a>
       <a href="#/live-boards"><span class="count">PREVIZ</span>LIVE BOARDS</a>
     </div>
     <div id="smart-tag-list" class="channel-list"></div>
-  </details>
-  <details class="drawer-section" id="drawer-channels">
-    <summary><span class="drawer-section-h">CHANNELS</span><span class="drawer-section-n" id="drawer-channels-n"></span></summary>
-    <div id="channel-list" class="channel-list"></div>
   </details>
   <details class="drawer-section" id="drawer-folders">
     <summary><span class="drawer-section-h">FOLDERS</span><span class="drawer-section-n" id="drawer-folders-n"></span></summary>
@@ -163,6 +164,7 @@
           </select>
           <button id="btn-sort-dir" class="ico-btn" title="Toggle sort direction">↓</button>
         </label>
+        <button type="button" class="filter-toggle-btn" id="home-filter-video" title="Filter tracks with video">🎬 VIDEOS</button>
         <label class="control-group control-size">SIZE
           <input type="range" id="home-size" min="40" max="280" step="10" />
         </label>

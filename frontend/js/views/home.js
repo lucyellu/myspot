@@ -1,6 +1,6 @@
 import { api, mediaUrl } from "../api.js";
 import { fmtDuration, fmtAccount, channelColor, el, clear } from "../util.js";
-import { playSongNow } from "../player.js";
+import { playSongNow, setPlaylistContext, appendPlaylistSongs } from "../player.js";
 
 const PAGE = 60;
 
@@ -15,17 +15,29 @@ function saveHomePrefs(p) {
   try { localStorage.setItem(STORE_KEY, JSON.stringify(p)); } catch { /* ignore */ }
 }
 
-export async function renderHome({ account = null, q = null, tag = null } = {}) {
+export async function renderHome({ account = null, q = null, tag = null, has_video = false } = {}) {
   const view = document.getElementById("view");
   clear(view);
   const tpl = document.getElementById("tpl-home").content.cloneNode(true);
   view.append(tpl);
 
+  let videoOnly = Boolean(has_video);
   const titleEl = document.getElementById("home-title");
-  if (q) titleEl.textContent = `Search: ${q}`;
-  else if (tag) titleEl.textContent = `🎤 ${tag.toUpperCase()}`;
-  else if (account) titleEl.textContent = fmtAccount(account).toUpperCase();
-  else titleEl.textContent = "ALL CHANNELS";
+  const updateTitle = () => {
+    let base = "ALL CHANNELS";
+    if (q) base = `Search: ${q}`;
+    else if (tag) base = `🎤 ${tag.toUpperCase()}`;
+    else if (account) base = fmtAccount(account).toUpperCase();
+    else if (videoOnly && !account && !q && !tag) base = "VIDEOS 🎬";
+
+    if (videoOnly && (account || q || tag)) {
+      titleEl.textContent = `${base} · VIDEOS 🎬`;
+    } else {
+      titleEl.textContent = base;
+    }
+    return titleEl.textContent;
+  };
+  let contextName = updateTitle();
 
   const grid = document.getElementById("grid");
   const status = document.getElementById("grid-status");
@@ -33,6 +45,17 @@ export async function renderHome({ account = null, q = null, tag = null } = {}) 
   const sortSel = document.getElementById("home-sort");
   const sizeSel = document.getElementById("home-size");
   const viewBtns = document.querySelectorAll(".view-btn");
+  const videoFilterBtn = document.getElementById("home-filter-video");
+
+  if (videoFilterBtn) {
+    videoFilterBtn.classList.toggle("active", videoOnly);
+    videoFilterBtn.onclick = () => {
+      videoOnly = !videoOnly;
+      videoFilterBtn.classList.toggle("active", videoOnly);
+      contextName = updateTitle();
+      loadPage(true);
+    };
+  }
 
   // Hydrate size + view-mode + sort from localStorage
   const prefs = loadHomePrefs();
@@ -73,18 +96,35 @@ export async function renderHome({ account = null, q = null, tag = null } = {}) 
   let dir = "desc";
   let offset = 0;
   let total = 0;
+  let loadedSongs = [];
 
   const dirBtn = document.getElementById("btn-sort-dir");
   const updateDirBtn = () => { dirBtn.textContent = dir === "desc" ? "↓" : "↑"; };
   dirBtn.onclick = () => { dir = dir === "desc" ? "asc" : "desc"; updateDirBtn(); loadPage(true); };
 
   async function loadPage(reset = false) {
-    if (reset) { clear(grid); offset = 0; }
+    if (reset) { clear(grid); offset = 0; loadedSongs = []; }
     status.textContent = "Loading...";
-    const data = await api.songs({ account, q, tag, limit: PAGE, offset, sort, dir });
+    const data = await api.songs({
+      account,
+      q,
+      tag,
+      has_video: videoOnly ? true : null,
+      limit: PAGE,
+      offset,
+      sort,
+      dir,
+    });
     total = data.total;
-    for (const s of data.items) grid.append(card(s));
+    const query = { account, q, tag, has_video: videoOnly ? true : null, sort, dir, total };
+
+    for (const s of data.items) {
+      loadedSongs.push(s);
+      grid.append(card(s, () => loadedSongs, query, contextName));
+    }
     offset += data.items.length;
+    appendPlaylistSongs(data.items, { total });
+
     status.textContent = `${offset.toLocaleString()} / ${total.toLocaleString()}`;
     more.disabled = offset >= total;
     more.textContent = offset >= total ? "ALL LOADED" : "LOAD MORE";
@@ -102,7 +142,7 @@ export async function renderHome({ account = null, q = null, tag = null } = {}) 
 
   // Add a "RECENT ASSETS" strip at the bottom of the home view so users can
   // navigate songs + assets in one place.
-  if (!q && !account) {
+  if (!q && !account && !videoOnly) {
     await renderAssetsStrip(view);
   }
 }
@@ -130,7 +170,7 @@ async function renderAssetsStrip(view) {
   view.append(wrap);
 }
 
-export function card(s) {
+export function card(s, getPlaylist = null, query = null, contextName = "") {
   const tpl = document.getElementById("tpl-card").content.cloneNode(true);
   const article = tpl.querySelector(".card");
   const thumb = article.querySelector(".thumb");
@@ -143,6 +183,14 @@ export function card(s) {
   const href = `#/song/${s.id}`;
   thumb.href = href;
   titleEl.href = href;
+
+  const onPick = () => {
+    const list = getPlaylist ? getPlaylist() : [s];
+    setPlaylistContext({ playlist: list, song: s, query, contextName });
+  };
+  thumb.onclick = onPick;
+  titleEl.onclick = onPick;
+
   const c = channelColor(s.account);
   thumb.style.background = `linear-gradient(150deg, ${c}3 0%, ${c}9 100%)`;
 
@@ -176,6 +224,7 @@ export function card(s) {
   quick.onclick = (e) => {
     e.preventDefault();
     e.stopPropagation();
+    onPick();
     playSongNow(s);
   };
   thumb.append(quick);
@@ -198,7 +247,19 @@ export function card(s) {
     if (liked) liked.hidden = false;
   }
   const videoBadge = article.querySelector(".card-video-badge");
-  if (videoBadge) videoBadge.hidden = !s.video_only;
+  if (videoBadge) {
+    if (s.video_only) {
+      videoBadge.textContent = "mp4";
+      videoBadge.title = "No mp3 — playing from video render";
+      videoBadge.hidden = false;
+    } else if (s.has_video || s.video_path) {
+      videoBadge.textContent = "🎬";
+      videoBadge.title = "Video track";
+      videoBadge.hidden = false;
+    } else {
+      videoBadge.hidden = true;
+    }
+  }
 
   return article;
 }

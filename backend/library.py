@@ -6,7 +6,10 @@ from pathlib import Path
 
 from mutagen.mp3 import MP3
 from PIL import Image
-import imagehash
+try:
+    import imagehash
+except ImportError:
+    imagehash = None
 
 # Import the module (not the names) so that a settings change followed by
 # config.reload_env() is picked up here without restarting the server —
