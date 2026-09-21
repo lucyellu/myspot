@@ -318,7 +318,10 @@
 
 <main class="player-card" id="player-card">
   <header class="station-bar">
-    <div class="station-title">MYSPOT FM</div>
+    <div>
+      <div class="station-title">MYSPOT FM</div>
+      <div class="station-location" id="station-location" style="font-size: 11px; color: var(--muted); letter-spacing: 0.5px; font-weight: 500;">Vancouver, Canada</div>
+    </div>
     <div class="live-pill" id="live-indicator">LIVE 24/7</div>
   </header>
 
@@ -412,7 +415,18 @@
       if (!liveState || !liveState.show) return;
 
       const dp = liveState.daypart || {};
-      daypartBadge.textContent = `✦ ${dp.label || "Live Station"}`;
+      const wx = liveState.weather;
+      let wxText = "";
+      if (wx && wx.temperature_c != null) {
+        wxText = ` · ${Math.round(wx.temperature_c)}°C ${wx.summary || ""}`;
+      }
+      const clockText = liveState.clock ? ` · ${liveState.clock}` : "";
+      daypartBadge.textContent = `✦ ${dp.label || "Live Station"}${clockText}${wxText}`;
+
+      if (liveState.place) {
+        const locEl = document.getElementById("station-location");
+        if (locEl) locEl.textContent = liveState.place;
+      }
       
       showSegments = liveState.show.segments || [];
       currentIdx = liveState.currentSegmentIndex || 0;

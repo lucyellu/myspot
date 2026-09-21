@@ -10,8 +10,9 @@ from .tts import synthesize_radio_voice
 log = logging.getLogger(__name__)
 
 RADIO_SHOWS_DIR = EXPORTS_DIR / "radio_shows"
-DEFAULT_PLACE = "Vancouver"
+DEFAULT_PLACE = "Vancouver, Canada"
 DEFAULT_TZ = "America/Vancouver"
+
 
 DAYPARTS = {
     "morning": {
@@ -89,6 +90,108 @@ DAYPARTS = {
 }
 
 DAYPART_ORDER = ["morning", "midday", "afternoon", "evening", "late-night", "overnight"]
+ 
+_WEATHER_CACHE: dict = {}
+ 
+_WMO_WEATHER = {
+    0: "clear skies",
+    1: "mainly clear skies",
+    2: "partly cloudy skies",
+    3: "overcast skies",
+    45: "foggy conditions",
+    48: "rime fog",
+    51: "light drizzle",
+    53: "drizzle",
+    55: "heavy drizzle",
+    61: "light rain",
+    63: "rain",
+    65: "heavy rain",
+    71: "light snow",
+    73: "snow",
+    75: "heavy snow",
+    80: "light rain showers",
+    81: "rain showers",
+    82: "heavy rain showers",
+    95: "thunderstorms",
+}
+ 
+ 
+def get_vancouver_weather(place: str = DEFAULT_PLACE) -> dict:
+    """Fetch live weather for Vancouver, Canada in Celsius using Open-Meteo with a 15-minute cache.
+    Zero-key public endpoint."""
+    now_ts = datetime.now().timestamp()
+    cached = _WEATHER_CACHE.get(place)
+    if cached and (now_ts - cached["ts"] < 900):
+        return cached["data"]
+ 
+    data = {
+        "place": place,
+        "summary": "partly cloudy skies",
+        "temperature_c": 14,
+        "phrase": "14 degrees Celsius with partly cloudy skies",
+    }
+    try:
+        import httpx
+        with httpx.Client(timeout=4.0) as client:
+            resp = client.get(
+                "https://api.open-meteo.com/v1/forecast",
+                params={
+                    "latitude": 49.2827,
+                    "longitude": -123.1207,
+                    "current": "temperature_2m,precipitation,weather_code",
+                    "temperature_unit": "celsius",
+                    "timezone": "America/Vancouver",
+                },
+            )
+            if resp.status_code == 200:
+                cur = resp.json().get("current", {})
+                code = int(cur.get("weather_code") or 0)
+                temp = round(float(cur.get("temperature_2m") or 14))
+                summary = _WMO_WEATHER.get(code, "fair skies")
+                data = {
+                    "place": place,
+                    "summary": summary,
+                    "temperature_c": temp,
+                    "phrase": f"{temp} degrees Celsius and {summary}",
+                }
+                _WEATHER_CACHE[place] = {"ts": now_ts, "data": data}
+    except Exception as exc:
+        log.warning(f"Weather lookup fallback for {place}: {exc}")
+ 
+    return data
+ 
+ 
+def format_spoken_date(d: date) -> str:
+    """Format date for natural speech: e.g. 'Sunday, September 20th'."""
+    day = d.day
+    if 11 <= (day % 100) <= 13:
+        suffix = "th"
+    else:
+        suffix = {1: "st", 2: "nd", 3: "rd"}.get(day % 10, "th")
+    return d.strftime(f"%A, %B {day}{suffix}")
+ 
+ 
+def format_12h_time(dt_or_time: datetime | time | str) -> str:
+    """Format time strictly into 12-hour AM/PM format, NEVER 24-hour time.
+    Leading zeroes are stripped for natural pronunciation (e.g. '6:00 AM', '2:15 PM', '9:36 PM')."""
+    if isinstance(dt_or_time, str):
+        parts = dt_or_time.strip().split(":")
+        h = int(parts[0])
+        m = int(parts[1]) if len(parts) > 1 else 0
+        dt_or_time = time(h, m)
+ 
+    if isinstance(dt_or_time, datetime):
+        t = dt_or_time.time()
+    else:
+        t = dt_or_time
+ 
+    hour_12 = t.hour % 12
+    if hour_12 == 0:
+        hour_12 = 12
+    period = "AM" if t.hour < 12 else "PM"
+    return f"{hour_12}:{t.minute:02d} {period}"
+ 
+ 
 
 
 def estimate_speech_duration(text: str = "") -> int:
@@ -243,49 +346,95 @@ def _build_daypart_segments(
     air_time: str = "06:00",
 ) -> list[dict]:
     dp = DAYPARTS.get(daypart, DAYPARTS["morning"])
-    day_name = d.strftime("%A")
     host = dp["host"]
     label = dp["label"]
+    date_spoken = format_spoken_date(d)
 
-    segments = [
-        _talk(
-            "Station Sign-On",
-            f"You're tuned to myspot FM in {place}. It is {air_time} on {day_name}, opening up the {label} broadcast. {dp['intro_tag']}",
-            host=host,
-        ),
-    ]
+    # Fetch live Vancouver weather (Celsius)
+    wx = get_vancouver_weather(place)
+    temp_c = wx.get("temperature_c", 14)
+    wx_summary = wx.get("summary", "fair skies")
+
+    # Daypart start time strictly formatted as 12-hour AM/PM (never 24-hour time)
+    start_hour = dp.get("start_hour", 6)
+    tz = ZoneInfo(DEFAULT_TZ)
+    block_start_dt = datetime.combine(d, time(start_hour, 0), tzinfo=tz)
+    start_clock = format_12h_time(air_time) if air_time else format_12h_time(block_start_dt)
+
+    first_talk = _talk(
+        "Station Sign-On",
+        f"You're tuned to myspot FM in {place}. It is {start_clock} on {date_spoken}, opening up the {label} broadcast. The weather desk reports {temp_c} degrees Celsius with {wx_summary}. {dp['intro_tag']}",
+        host=host,
+    )
+    segments = [first_talk]
+    elapsed_seconds = first_talk["duration"]
 
     for idx, song in enumerate(songs):
-        segments.append({"type": "song", "title": song.get("title") or "Untitled", "song": song, "duration": song.get("duration") or 180})
+        song_dur = song.get("duration") or 180
+        segments.append({
+            "type": "song",
+            "title": song.get("title") or "Untitled",
+            "song": song,
+            "duration": song_dur,
+        })
+        elapsed_seconds += song_dur
+
+        current_time = block_start_dt + timedelta(seconds=elapsed_seconds)
+        current_clock = format_12h_time(current_time)
 
         if idx == 0:
-            segments.append(_talk(
+            talk = _talk(
                 "First Up",
-                f"That was {song.get('title')}. Setting the tone for this {label} session on myspot. Up next, we keep the signal moving.",
+                f"That was {song.get('title')}. Setting the tone for this {label} session on myspot in {place}. Up next, we keep the signal moving.",
                 host=host,
-            ))
+            )
+            segments.append(talk)
+            elapsed_seconds += talk["duration"]
         elif idx == 3:
-            segments.append(_talk(
-                "Dream Sponsor",
-                f"Today's imaginary sponsor for the {label} is a boutique coffee counter and synth shop: fresh beans, quiet lighting, and always tuned to the right frequency.",
+            talk = _talk(
+                "Weather & Time Desk",
+                f"Checking the {place} weather desk at {current_clock} on {date_spoken}: outside it is currently {temp_c} degrees Celsius with {wx_summary}. That was {song.get('title')}. More commercial-free music from the vault coming right up.",
                 host=host,
-            ))
+            )
+            segments.append(talk)
+            elapsed_seconds += talk["duration"]
         elif idx == 7:
-            segments.append(_talk(
+            talk = _talk(
+                "Dream Sponsor",
+                f"Today's imaginary sponsor for the {label} in {place} is a local pour-over coffee counter and vintage synth shop: quiet morning light, fresh beans, and always tuned to the right frequency.",
+                host=host,
+            )
+            segments.append(talk)
+            elapsed_seconds += talk["duration"]
+        elif idx == 12:
+            talk = _talk(
                 "Broadcast Checkpoint",
-                f"Still inside myspot {label} on {day_name}. Weather desk reports clear signal over {place}. More deep library cuts coming up right now.",
+                f"Still inside myspot {label} on this {date_spoken}. The time is {current_clock} in {place}, sitting at {temp_c} degrees Celsius under {wx_summary}. Let's get right back into the songs.",
                 host=host,
-            ))
-        elif idx > 0 and idx < len(songs) - 1 and idx % 4 == 0:
-            segments.append(_talk(
-                "Station ID",
-                f"This is myspot 24/7 radio, live from the vault. Handcrafted curation, zero filler.",
-                host=host,
-            ))
+            )
+            segments.append(talk)
+            elapsed_seconds += talk["duration"]
+        elif idx > 0 and idx < len(songs) - 1 and idx % 6 == 0:
+            if (idx // 6) % 2 == 1:
+                talk = _talk(
+                    "Weather & Time Update",
+                    f"It is {current_clock} in {place}, {temp_c} degrees Celsius with {wx_summary}. You're listening to myspot 24/7 AI Radio, commercial-free.",
+                    host=host,
+                )
+            else:
+                talk = _talk(
+                    "Station ID & Clock",
+                    f"This is myspot 24/7 radio on {date_spoken}. The clock shows {current_clock} here in {place}. Handcrafted curation, zero filler.",
+                    host=host,
+                )
+            segments.append(talk)
+            elapsed_seconds += talk["duration"]
 
+    end_time = block_start_dt + timedelta(seconds=elapsed_seconds)
+    end_clock = format_12h_time(end_time)
     segments.append(_talk(
         "Daypart Signoff",
-        f"That wraps this stretch of {label}. Stay tuned as myspot automatically rolls into the next broadcast block.",
+        f"That wraps this stretch of {label} for {date_spoken} in {place}. The time is {end_clock}, with the weather desk holding at {temp_c} degrees Celsius. Stay tuned as myspot automatically rolls into the next broadcast block.",
         host=host,
     ))
     return segments
@@ -468,8 +617,10 @@ def get_live_station_state(conn, dt: datetime | None = None, place: str = DEFAUL
     return {
         "ok": True,
         "now": dt.isoformat(),
-        "clock": dt.strftime("%I:%M %p"),
+        "clock": format_12h_time(dt),
+        "date": format_spoken_date(s_date),
         "place": place,
+        "weather": get_vancouver_weather(place),
         "daypart": dp,
         "nextDaypart": next_dp,
         "showId": show.get("id"),
