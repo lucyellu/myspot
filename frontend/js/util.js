@@ -10,6 +10,13 @@ export function fmtDuration(seconds) {
   return `${m}:${ss}`;
 }
 
+export function fmtMonthYear(dateStr) {
+  if (!dateStr) return null;
+  const d = new Date(dateStr);
+  if (isNaN(d.getTime())) return null;
+  return d.toLocaleDateString("en-US", { month: "long", year: "numeric" });
+}
+
 export function fmtAccount(name) {
   if (!name) return "—";
   name = name.replace(/^sunosync_?/, "");
@@ -23,6 +30,52 @@ export function channelColor(rawAccount) {
   let h = 0;
   for (let i = 0; i < name.length; i++) h = (h * 31 + name.charCodeAt(i)) & 0xffff;
   return _CH_PALETTE[h % _CH_PALETTE.length];
+}
+
+const _channelDisplayNames = new Map();
+const _channelAvatars = new Map();
+
+export function setChannelDisplayNames(channels) {
+  _channelDisplayNames.clear();
+  _channelAvatars.clear();
+  if (Array.isArray(channels)) {
+    for (const c of channels) {
+      if (c && c.account) {
+        if (c.display_name) {
+          _channelDisplayNames.set(c.account, c.display_name);
+          _channelDisplayNames.set(fmtAccount(c.account), c.display_name);
+        }
+        if (c.avatar_url) {
+          _channelAvatars.set(c.account, c.avatar_url);
+          _channelAvatars.set(fmtAccount(c.account), c.avatar_url);
+        }
+      }
+    }
+  }
+}
+
+export function getChannelDisplayName(rawAccount) {
+  if (!rawAccount) return "—";
+  if (_channelDisplayNames.has(rawAccount)) {
+    return _channelDisplayNames.get(rawAccount);
+  }
+  const clean = fmtAccount(rawAccount);
+  if (_channelDisplayNames.has(clean)) {
+    return _channelDisplayNames.get(clean);
+  }
+  return clean;
+}
+
+export function getChannelAvatar(rawAccount) {
+  if (!rawAccount) return null;
+  if (_channelAvatars.has(rawAccount)) {
+    return _channelAvatars.get(rawAccount);
+  }
+  const clean = fmtAccount(rawAccount);
+  if (_channelAvatars.has(clean)) {
+    return _channelAvatars.get(clean);
+  }
+  return null;
 }
 
 export function el(tag, attrs = {}, ...children) {

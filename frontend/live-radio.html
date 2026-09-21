@@ -1,0 +1,600 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+<title>myspot 24/7 AI Radio · Live On Air</title>
+<link rel="icon" type="image/x-icon" href="/static/icon.ico" />
+<link rel="preconnect" href="https://fonts.googleapis.com" />
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=VT323&family=Space+Grotesk:wght@400;600;700&family=Inter:wght@400;500;600;700&display=swap" />
+<script src="/static/config.js" onerror="this.remove()"></script>
+<script>
+  (function () {
+    var qs = new URLSearchParams(window.location.search);
+    var p = qs.get("api");
+    if (p) {
+      try { localStorage.setItem("myspot_api_base", p.replace(/\/$/, "")); } catch (_) {}
+      window.MYSPOT_API_BASE = p.replace(/\/$/, "");
+    } else {
+      var s = localStorage.getItem("myspot_api_base");
+      if (s) window.MYSPOT_API_BASE = s;
+      else if (window.location.hostname !== "localhost" && window.location.hostname !== "127.0.0.1") {
+        window.MYSPOT_API_BASE = "https://independent-completely-precious-jewish.trycloudflare.com";
+      }
+    }
+  })();
+</script>
+<style>
+  :root {
+    --bg: #0b0f0e;
+    --card: #131a18;
+    --card-border: #1f2a26;
+    --accent: #9fff52;
+    --accent-glow: rgba(159, 255, 82, 0.25);
+    --text: #e8f0eb;
+    --muted: #83978d;
+    --live-red: #ff4757;
+  }
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  body {
+    background-color: var(--bg);
+    color: var(--text);
+    font-family: 'Space Grotesk', -apple-system, BlinkMacSystemFont, sans-serif;
+    min-height: 100vh;
+    min-height: 100dvh;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    padding: 16px;
+    overflow-x: hidden;
+  }
+  .player-card {
+    background: var(--card);
+    border: 1px solid var(--card-border);
+    border-radius: 24px;
+    width: 100%;
+    max-width: 440px;
+    padding: 24px 20px;
+    box-shadow: 0 20px 50px rgba(0, 0, 0, 0.6), 0 0 40px var(--accent-glow);
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    position: relative;
+  }
+  .station-bar {
+    width: 100%;
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    margin-bottom: 20px;
+  }
+  .station-title {
+    font-family: 'VT323', monospace;
+    font-size: 26px;
+    letter-spacing: 2px;
+    color: var(--accent);
+    text-shadow: 0 0 10px var(--accent-glow);
+  }
+  .live-pill {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    background: rgba(255, 71, 87, 0.15);
+    border: 1px solid rgba(255, 71, 87, 0.3);
+    color: var(--live-red);
+    padding: 4px 10px;
+    border-radius: 999px;
+    font-size: 11px;
+    font-weight: 700;
+    letter-spacing: 1px;
+    text-transform: uppercase;
+  }
+  .live-pill::before {
+    content: '';
+    display: block;
+    width: 7px;
+    height: 7px;
+    background: var(--live-red);
+    border-radius: 50%;
+    animation: livePulse 1.5s infinite;
+  }
+  @keyframes livePulse {
+    0% { transform: scale(0.9); opacity: 0.8; }
+    50% { transform: scale(1.3); opacity: 1; box-shadow: 0 0 8px var(--live-red); }
+    100% { transform: scale(0.9); opacity: 0.8; }
+  }
+  .daypart-badge {
+    background: rgba(159, 255, 82, 0.1);
+    color: var(--accent);
+    border: 1px solid rgba(159, 255, 82, 0.2);
+    padding: 6px 14px;
+    border-radius: 12px;
+    font-size: 13px;
+    font-weight: 600;
+    margin-bottom: 18px;
+    text-align: center;
+    max-width: 90%;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+  }
+  .cover-wrap {
+    width: 250px;
+    height: 250px;
+    max-width: 75vw;
+    max-height: 75vw;
+    border-radius: 18px;
+    background: #18221f;
+    border: 2px solid var(--card-border);
+    overflow: hidden;
+    position: relative;
+    box-shadow: 0 12px 30px rgba(0,0,0,0.5);
+    margin-bottom: 20px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+  }
+  .cover-art {
+    width: 100%;
+    height: 100%;
+    object-fit: cover;
+    transition: transform 0.4s ease, opacity 0.3s ease;
+  }
+  .cover-fallback {
+    font-size: 60px;
+    color: var(--muted);
+  }
+  .track-meta {
+    width: 100%;
+    text-align: center;
+    margin-bottom: 20px;
+  }
+  .track-title {
+    font-size: 20px;
+    font-weight: 700;
+    line-height: 1.3;
+    margin-bottom: 6px;
+    color: #fff;
+    display: -webkit-box;
+    -webkit-line-clamp: 2;
+    -webkit-box-orient: vertical;
+    overflow: hidden;
+  }
+  .track-artist {
+    font-size: 14px;
+    color: var(--muted);
+    font-weight: 500;
+  }
+  .eq-bar-wrap {
+    display: flex;
+    align-items: flex-end;
+    justify-content: center;
+    gap: 4px;
+    height: 22px;
+    margin-bottom: 16px;
+  }
+  .eq-bar {
+    width: 3px;
+    height: 4px;
+    background: var(--accent);
+    border-radius: 2px;
+    transition: height 0.15s ease;
+  }
+  .playing .eq-bar:nth-child(1) { animation: bounce 0.8s infinite ease-in-out alternate; }
+  .playing .eq-bar:nth-child(2) { animation: bounce 1.1s infinite ease-in-out alternate; }
+  .playing .eq-bar:nth-child(3) { animation: bounce 0.6s infinite ease-in-out alternate; }
+  .playing .eq-bar:nth-child(4) { animation: bounce 0.9s infinite ease-in-out alternate; }
+  .playing .eq-bar:nth-child(5) { animation: bounce 1.2s infinite ease-in-out alternate; }
+  .playing .eq-bar:nth-child(6) { animation: bounce 0.7s infinite ease-in-out alternate; }
+  @keyframes bounce {
+    0% { height: 4px; }
+    100% { height: 20px; }
+  }
+  .controls-row {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 20px;
+    width: 100%;
+    margin-bottom: 16px;
+  }
+  .play-btn {
+    width: 72px;
+    height: 72px;
+    border-radius: 50%;
+    background: var(--accent);
+    border: none;
+    color: #0b0f0e;
+    font-size: 28px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    cursor: pointer;
+    box-shadow: 0 6px 24px var(--accent-glow);
+    transition: transform 0.15s ease, background 0.2s;
+  }
+  .play-btn:hover { transform: scale(1.05); }
+  .play-btn:active { transform: scale(0.95); }
+  .action-btn {
+    background: rgba(255, 255, 255, 0.06);
+    border: 1px solid var(--card-border);
+    color: var(--text);
+    width: 44px;
+    height: 44px;
+    border-radius: 50%;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    cursor: pointer;
+    font-size: 16px;
+    transition: background 0.15s;
+  }
+  .action-btn:hover { background: rgba(255, 255, 255, 0.12); }
+  .action-btn.active { color: var(--accent); border-color: var(--accent); }
+  .tap-overlay {
+    position: absolute;
+    inset: 0;
+    background: rgba(11, 15, 14, 0.94);
+    border-radius: 24px;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    z-index: 10;
+    cursor: pointer;
+    padding: 24px;
+    text-align: center;
+  }
+  .tap-overlay h2 {
+    font-size: 24px;
+    margin-bottom: 8px;
+    color: #fff;
+  }
+  .tap-overlay p {
+    font-size: 14px;
+    color: var(--muted);
+    margin-bottom: 24px;
+  }
+  .tap-big-btn {
+    width: 84px;
+    height: 84px;
+    border-radius: 50%;
+    background: var(--accent);
+    color: #000;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 36px;
+    box-shadow: 0 0 35px var(--accent);
+    animation: pulseBig 2s infinite;
+  }
+  @keyframes pulseBig {
+    0% { transform: scale(0.95); box-shadow: 0 0 20px var(--accent); }
+    50% { transform: scale(1.05); box-shadow: 0 0 45px var(--accent); }
+    100% { transform: scale(0.95); box-shadow: 0 0 20px var(--accent); }
+  }
+  .footer-links {
+    margin-top: 14px;
+    display: flex;
+    gap: 16px;
+    font-size: 12px;
+    color: var(--muted);
+  }
+  .footer-links a, .footer-links button {
+    color: var(--muted);
+    text-decoration: none;
+    background: none;
+    border: none;
+    cursor: pointer;
+    font-family: inherit;
+    font-size: inherit;
+  }
+  .footer-links a:hover, .footer-links button:hover {
+    color: var(--accent);
+  }
+  .status-toast {
+    position: fixed;
+    bottom: 24px;
+    background: #1e2824;
+    border: 1px solid var(--accent);
+    color: #fff;
+    padding: 8px 16px;
+    border-radius: 20px;
+    font-size: 13px;
+    opacity: 0;
+    transform: translateY(10px);
+    transition: opacity 0.3s, transform 0.3s;
+    pointer-events: none;
+  }
+  .status-toast.show {
+    opacity: 1;
+    transform: translateY(0);
+  }
+</style>
+</head>
+<body>
+
+<main class="player-card" id="player-card">
+  <header class="station-bar">
+    <div class="station-title">MYSPOT FM</div>
+    <div class="live-pill" id="live-indicator">LIVE 24/7</div>
+  </header>
+
+  <div class="daypart-badge" id="daypart-badge">Warming station signal...</div>
+
+  <div class="cover-wrap">
+    <img id="cover-art" class="cover-art" src="" alt="Album Art" hidden />
+    <div id="cover-fallback" class="cover-fallback">♫</div>
+  </div>
+
+  <div class="track-meta">
+    <h1 class="track-title" id="track-title">Tuning Live Signal...</h1>
+    <div class="track-artist" id="track-artist">Connecting to 24/7 Oracle station</div>
+  </div>
+
+  <div class="eq-bar-wrap" id="eq-wrap">
+    <span class="eq-bar"></span>
+    <span class="eq-bar"></span>
+    <span class="eq-bar"></span>
+    <span class="eq-bar"></span>
+    <span class="eq-bar"></span>
+    <span class="eq-bar"></span>
+  </div>
+
+  <div class="controls-row">
+    <button class="action-btn" id="resync-btn" title="Re-sync with Live Broadcast" aria-label="Re-sync">⟳</button>
+    <button class="play-btn" id="play-btn" title="Play / Pause" aria-label="Play">▶</button>
+    <button class="action-btn" id="next-btn" title="Next Segment" aria-label="Next">⏭</button>
+  </div>
+
+  <div class="footer-links">
+    <button type="button" id="copy-stream-btn">Copy Stream URL</button>
+    <span>·</span>
+    <a href="/#/radio" id="full-app-link">Desktop Tuner</a>
+  </div>
+
+  <div class="tap-overlay" id="tap-overlay" style="display: none;">
+    <div class="tap-big-btn">▶</div>
+    <h2 style="margin-top: 20px;">TUNE IN LIVE</h2>
+    <p>Tap to start 24/7 broadcast</p>
+  </div>
+</main>
+
+<audio id="station-audio" preload="auto"></audio>
+<audio id="voice-audio" preload="auto"></audio>
+
+<div class="status-toast" id="toast"></div>
+
+<script type="module">
+  const BASE = window.MYSPOT_API_BASE || "";
+  const audio = document.getElementById("station-audio");
+  const voice = document.getElementById("voice-audio");
+  const playBtn = document.getElementById("play-btn");
+  const resyncBtn = document.getElementById("resync-btn");
+  const nextBtn = document.getElementById("next-btn");
+  const tapOverlay = document.getElementById("tap-overlay");
+  const daypartBadge = document.getElementById("daypart-badge");
+  const trackTitle = document.getElementById("track-title");
+  const trackArtist = document.getElementById("track-artist");
+  const coverArt = document.getElementById("cover-art");
+  const coverFallback = document.getElementById("cover-fallback");
+  const eqWrap = document.getElementById("eq-wrap");
+  const copyStreamBtn = document.getElementById("copy-stream-btn");
+  const toastEl = document.getElementById("toast");
+
+  let liveState = null;
+  let showSegments = [];
+  let currentIdx = -1;
+  let isPlaying = false;
+  let pollInterval = null;
+
+  function toast(msg) {
+    toastEl.textContent = msg;
+    toastEl.classList.add("show");
+    setTimeout(() => toastEl.classList.remove("show"), 2500);
+  }
+
+  async function apiGet(path) {
+    const res = await fetch(BASE + path);
+    if (!res.ok) throw new Error(`HTTP ${res.status}`);
+    return res.json();
+  }
+
+  function mediaUrl(type, id) {
+    return `${BASE}/media/${type}/${id}`;
+  }
+
+  async function syncLiveStation() {
+    try {
+      liveState = await apiGet("/api/radio/live");
+      if (!liveState || !liveState.show) return;
+
+      const dp = liveState.daypart || {};
+      daypartBadge.textContent = `✦ ${dp.label || "Live Station"}`;
+      
+      showSegments = liveState.show.segments || [];
+      currentIdx = liveState.currentSegmentIndex || 0;
+
+      await loadSegment(currentIdx, liveState.segmentOffset || 0);
+    } catch (err) {
+      console.warn("Live sync error:", err);
+      daypartBadge.textContent = "Reconnecting to live station...";
+    }
+  }
+
+  async function loadSegment(idx, offset = 0) {
+    if (!showSegments.length || idx >= showSegments.length) {
+      await syncLiveStation();
+      return;
+    }
+    currentIdx = idx;
+    const seg = showSegments[idx];
+
+    // Stop currently playing
+    voice.pause();
+    voice.removeAttribute("src");
+
+    if (seg.type === "talk") {
+      audio.pause();
+      trackTitle.textContent = seg.title || "Station Voice Break";
+      trackArtist.textContent = `Host · ${seg.host || "myspot DJ"}`;
+      coverArt.hidden = true;
+      coverFallback.hidden = false;
+      coverFallback.textContent = "🎙";
+
+      updateMediaSession(seg.title, `Host (${seg.host || "myspot"})`, null);
+
+      if (seg.audio_url) {
+        voice.src = BASE + seg.audio_url;
+        if (isPlaying) {
+          try { await voice.play(); }
+          catch (_) { /* waiting for user tap */ }
+        }
+      } else {
+        // Speech synthesis fallback
+        if (isPlaying && "speechSynthesis" in window) {
+          const u = new SpeechSynthesisUtterance(seg.text);
+          u.onend = advanceNext;
+          window.speechSynthesis.speak(u);
+        }
+      }
+    } else if (seg.type === "song") {
+      const song = seg.song || {};
+      trackTitle.textContent = song.title || seg.title || "myspot Song";
+      trackArtist.textContent = song.account ? song.account.replace(/^sunosync_?/, "") : "myspot Radio";
+
+      const coverSrc = song.id ? mediaUrl("cover", song.id) : null;
+      if (coverSrc) {
+        coverArt.src = coverSrc;
+        coverArt.hidden = false;
+        coverFallback.hidden = true;
+      } else {
+        coverArt.hidden = true;
+        coverFallback.hidden = false;
+        coverFallback.textContent = "♫";
+      }
+
+      updateMediaSession(song.title, song.account, coverSrc);
+
+      const songSrc = mediaUrl("audio", song.id);
+      if (audio.src !== songSrc) {
+        audio.src = songSrc;
+        audio.load();
+      }
+
+      if (offset > 0) {
+        audio.currentTime = Math.min(offset, (song.duration || 180) - 1);
+      }
+
+      if (isPlaying) {
+        try { await audio.play(); }
+        catch (err) {
+          showTapOverlay();
+        }
+      }
+    }
+  }
+
+  function advanceNext() {
+    loadSegment(currentIdx + 1, 0);
+  }
+
+  audio.onended = advanceNext;
+  voice.onended = advanceNext;
+
+  function updateMediaSession(title, artist, artworkUrl) {
+    if ("mediaSession" in navigator) {
+      const dp = liveState?.daypart?.label || "Live";
+      navigator.mediaSession.metadata = new MediaMetadata({
+        title: title || "myspot 24/7 AI Radio",
+        artist: artist || "myspot FM",
+        album: `myspot FM · ${dp}`,
+        artwork: artworkUrl ? [{ src: artworkUrl, sizes: "512x512", type: "image/jpeg" }] : []
+      });
+      navigator.mediaSession.setActionHandler("play", togglePlay);
+      navigator.mediaSession.setActionHandler("pause", togglePlay);
+      navigator.mediaSession.setActionHandler("nexttrack", advanceNext);
+    }
+  }
+
+  async function togglePlay() {
+    if (isPlaying) {
+      isPlaying = false;
+      audio.pause();
+      voice.pause();
+      if ("speechSynthesis" in window) window.speechSynthesis.cancel();
+      playBtn.textContent = "▶";
+      eqWrap.classList.remove("playing");
+    } else {
+      isPlaying = true;
+      playBtn.textContent = "⏸";
+      eqWrap.classList.add("playing");
+      tapOverlay.style.display = "none";
+      const seg = showSegments[currentIdx];
+      try {
+        if (seg?.type === "talk" && voice.src) {
+          await voice.play();
+        } else if (seg?.type === "song") {
+          await audio.play();
+        } else {
+          await syncLiveStation();
+          if (showSegments[currentIdx]?.type === "song") await audio.play();
+        }
+      } catch (err) {
+        console.warn("Play error:", err);
+        showTapOverlay();
+      }
+    }
+  }
+
+  function showTapOverlay() {
+    isPlaying = false;
+    playBtn.textContent = "▶";
+    eqWrap.classList.remove("playing");
+    tapOverlay.style.display = "flex";
+  }
+
+  tapOverlay.onclick = async () => {
+    tapOverlay.style.display = "none";
+    isPlaying = true;
+    playBtn.textContent = "⏸";
+    eqWrap.classList.add("playing");
+    const seg = showSegments[currentIdx];
+    if (seg?.type === "talk" && voice.src) {
+      await voice.play();
+    } else {
+      await audio.play();
+    }
+  };
+
+  playBtn.onclick = togglePlay;
+  resyncBtn.onclick = async () => {
+    toast("Re-syncing with live station...");
+    await syncLiveStation();
+    if (isPlaying) {
+      const seg = showSegments[currentIdx];
+      if (seg?.type === "talk" && voice.src) await voice.play();
+      else if (seg?.type === "song") await audio.play();
+    }
+  };
+  nextBtn.onclick = advanceNext;
+
+  copyStreamBtn.onclick = async () => {
+    const streamUrl = `${BASE || window.location.origin}/api/radio/stream.mp3`;
+    try {
+      await navigator.clipboard.writeText(streamUrl);
+      toast("Stream URL copied! Works in VLC, CarPlay, Sonos.");
+    } catch (_) {
+      prompt("Copy live stream URL:", streamUrl);
+    }
+  };
+
+  // Auto-tune on page load
+  await syncLiveStation();
+  // Try autoplay
+  togglePlay().catch(() => showTapOverlay());
+</script>
+</body>
+</html>

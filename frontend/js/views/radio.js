@@ -1,4 +1,4 @@
-import { api, mediaUrl } from "../api.js?v=radio2";
+import { api, mediaUrl } from "../api.js?v=radio-247-live1";
 import { el, clear, fmtDuration, fmtAccount, toast } from "../util.js";
 import { getAudio, playQueuedSong, setPlayerContext } from "../player.js?v=radio-longform1";
 
@@ -186,6 +186,9 @@ export async function renderRadio() {
   );
 
   const stationActions = el("div", { class: "radio-actions" });
+  const liveSyncBtn = el("button", { class: "btn primary", type: "button", title: "Tune in to continuous 24/7 broadcast synchronized to right now" }, "24/7 Live");
+  const daypartBtn = el("button", { class: "btn", type: "button", title: "Load current 4-hour broadcast daypart" }, "Daypart");
+  const mobileLinkBtn = el("a", { class: "btn", href: "/static/live-radio.html", target: "_blank", title: "Open standalone 24/7 Mobile / Car player URL" }, "Mobile URL ↗");
   const morningPresetBtn = el("button", { class: "btn primary", type: "button" }, "Today 1H");
   const weekdayOneHourBtn = el("button", { class: "btn", type: "button" }, "Build Today");
   const loadBackgroundBtn = el("button", { class: "btn", type: "button" }, "Load Today");
@@ -194,7 +197,7 @@ export async function renderRadio() {
   const tomorrowBtn = el("button", { class: "btn", type: "button" }, "Tomorrow 1H");
   const addHourBtn = el("button", { class: "btn", type: "button" }, "Add Hour");
   const auto = el("button", { class: "btn", type: "button" }, "Auto Pick");
-  stationActions.append(morningPresetBtn, weekdayOneHourBtn, loadBackgroundBtn, refresh, makeShowBtn, tomorrowBtn, addHourBtn, auto);
+  stationActions.append(liveSyncBtn, mobileLinkBtn, daypartBtn, morningPresetBtn, weekdayOneHourBtn, loadBackgroundBtn, refresh, makeShowBtn, tomorrowBtn, addHourBtn, auto);
   station.append(stationActions);
   const connectorBox = el("div", { class: "radio-connectors" });
   station.append(connectorBox);
@@ -411,12 +414,31 @@ export async function renderRadio() {
     if (mode) replayState.textContent = mode;
   }
 
-  function tuneIn() {
+  async function tuneIn() {
     if (showPlaying) {
       stopShow();
       return;
     }
-    if (!showSegments.length) makeShow();
+    if (!showSegments.length) {
+      try {
+        receiverPreload.textContent = "TUNING";
+        const live = await api.radioLive({ place: p.place });
+        if (live && live.show && live.show.segments) {
+          loadShowSnapshot(live.show, { persistLocal: false });
+          currentSegmentIndex = live.currentSegmentIndex || 0;
+          await playSegment(currentSegmentIndex);
+          if (live.segmentOffset && live.activeSegment?.type === "song") {
+            const audio = getAudio();
+            audio.currentTime = Math.min(live.segmentOffset, (audio.duration || 180) - 1);
+          }
+          toast(`Tuned to 24/7 Live: ${live.daypart?.label || "myspot FM"}`);
+          return;
+        }
+      } catch (err) {
+        console.warn("Tune-in sync fallback:", err);
+      }
+      makeShow();
+    }
     playSegment(Math.max(0, currentSegmentIndex));
   }
 
@@ -438,7 +460,25 @@ export async function renderRadio() {
     selectStationSong(replayQueue[idx], { play: true, mode: replayQueue[idx]?.id === liveSong?.id ? "LIVE" : "REPLAY" });
   }
 
-  function jumpLive() {
+  async function jumpLive() {
+    try {
+      receiverPreload.textContent = "TUNING";
+      const live = await api.radioLive({ place: p.place });
+      if (live && live.show && live.show.segments) {
+        loadShowSnapshot(live.show, { persistLocal: false });
+        currentSegmentIndex = live.currentSegmentIndex || 0;
+        await playSegment(currentSegmentIndex);
+        if (live.segmentOffset && live.activeSegment?.type === "song") {
+          const audio = getAudio();
+          audio.currentTime = Math.min(live.segmentOffset, (audio.duration || 180) - 1);
+        }
+        replayState.textContent = "LIVE";
+        toast(`Live On Air: ${live.daypart?.label || "myspot FM"}`);
+        return;
+      }
+    } catch (err) {
+      console.warn("Jump live fallback:", err);
+    }
     if (!liveSong) return;
     const liveIndex = showSegments.findIndex((s) => s.type === "song" && s.song?.id === liveSong.id);
     if (liveIndex >= 0) playSegment(liveIndex);
@@ -732,6 +772,15 @@ export async function renderRadio() {
     toast("Saved show deleted");
   }
 
+  let voiceAudio = null;
+  function getVoiceAudio() {
+    if (!voiceAudio) {
+      voiceAudio = new Audio();
+      voiceAudio.preload = "auto";
+    }
+    return voiceAudio;
+  }
+
   async function playSegment(idx) {
     if (!showSegments.length) makeShow();
     const segment = showSegments[idx];
@@ -744,7 +793,11 @@ export async function renderRadio() {
       getAudio().pause();
       receiverPreload.textContent = "HOST";
       paintReceiver();
-      speakSegment(segment);
+      if (segment.audio_url) {
+        playVoiceClip(segment);
+      } else {
+        speakSegment(segment);
+      }
       paintReplayProgress();
       return;
     }
@@ -752,10 +805,44 @@ export async function renderRadio() {
       await selectStationSong(segment.song, { play: false, mode: segment.song.id === liveSong?.id ? "LIVE" : "REPLAY" });
       showPlaying = true;
       receiverPreload.textContent = "ON AIR";
+      const audio = getAudio();
+      audio.volume = 0.25;
       playQueuedSong(selected, { related: [], sources: [] });
+      let fadeStep = 0.25;
+      const fadeTimer = window.setInterval(() => {
+        fadeStep += 0.15;
+        if (fadeStep >= 1.0) {
+          audio.volume = 1.0;
+          window.clearInterval(fadeTimer);
+        } else {
+          audio.volume = fadeStep;
+        }
+      }, 75);
       paintReceiver();
       paintReplayProgress();
     }
+  }
+
+  function playVoiceClip(segment) {
+    cancelSpeech();
+    const va = getVoiceAudio();
+    va.pause();
+    va.src = segment.audio_url;
+
+    const finishSpeech = () => {
+      if (!showPlaying || showSegments[currentSegmentIndex] !== segment) return;
+      advanceShow(1);
+    };
+
+    va.onended = finishSpeech;
+    va.onerror = () => {
+      console.warn("Voice clip failed, falling back to Web Speech:", segment.audio_url);
+      speakSegment(segment);
+    };
+
+    va.play().catch(() => {
+      speakSegment(segment);
+    });
   }
 
   function speakSegment(segment) {
@@ -780,15 +867,38 @@ export async function renderRadio() {
   function cancelSpeech() {
     if (currentSpeechTimer) window.clearTimeout(currentSpeechTimer);
     currentSpeechTimer = null;
+    if (voiceAudio) {
+      voiceAudio.pause();
+      voiceAudio.removeAttribute("src");
+      voiceAudio.load();
+    }
     if ("speechSynthesis" in window) window.speechSynthesis.cancel();
     currentUtterance = null;
   }
 
-  function advanceShow(delta) {
+  async function advanceShow(delta) {
     if (!showPlaying) return;
     const next = currentSegmentIndex + delta;
     if (next >= showSegments.length) {
-      stopShow();
+      try {
+        receiverPreload.textContent = "SYNCING";
+        const live = await api.radioLive({ place: p.place });
+        if (live && live.show && live.show.segments && live.show.id !== currentShowId) {
+          loadShowSnapshot(live.show, { persistLocal: false });
+          playSegment(0);
+          return;
+        } else if (live && live.nextDaypart) {
+          const nextShow = await api.buildDaypartShow({ daypart: live.nextDaypart.id, place: p.place });
+          if (nextShow && nextShow.segments) {
+            loadShowSnapshot(nextShow, { persistLocal: false });
+            playSegment(0);
+            return;
+          }
+        }
+      } catch (err) {
+        console.warn("24/7 auto-advance error:", err);
+      }
+      playSegment(0);
       return;
     }
     playSegment(next);
@@ -804,6 +914,49 @@ export async function renderRadio() {
     paintRundown();
     paintReplayProgress();
   }
+
+  liveSyncBtn.onclick = async () => {
+    liveSyncBtn.disabled = true;
+    try {
+      receiverPreload.textContent = "TUNING";
+      const live = await api.radioLive({ place: p.place });
+      if (live && live.show && live.show.segments) {
+        loadShowSnapshot(live.show, { persistLocal: false });
+        currentSegmentIndex = live.currentSegmentIndex || 0;
+        await playSegment(currentSegmentIndex);
+        if (live.segmentOffset && live.activeSegment?.type === "song") {
+          const audio = getAudio();
+          audio.currentTime = Math.min(live.segmentOffset, (audio.duration || 180) - 1);
+        }
+        replayState.textContent = "LIVE";
+        toast(`24/7 Live: ${live.daypart?.label || "myspot FM"}`);
+      } else {
+        toast("Live radio signal unavailable");
+      }
+    } catch (e) {
+      toast(`Live radio error: ${e.message || e}`);
+    } finally {
+      liveSyncBtn.disabled = false;
+    }
+  };
+
+  daypartBtn.onclick = async () => {
+    daypartBtn.disabled = true;
+    try {
+      toast("Loading current daypart...");
+      const live = await api.radioLive({ place: p.place });
+      const dpId = live.daypart?.id || "morning";
+      const res = await api.buildDaypartShow({ daypart: dpId, place: p.place, force: false });
+      if (res) {
+        loadShowSnapshot(res, { persistLocal: true });
+        toast(`Loaded ${res.title}`);
+      }
+    } catch (e) {
+      toast(`Daypart error: ${e.message || e}`);
+    } finally {
+      daypartBtn.disabled = false;
+    }
+  };
 
   refresh.onclick = loadContext;
   morningPresetBtn.onclick = () => applyMorningPreset();

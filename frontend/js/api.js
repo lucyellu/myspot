@@ -93,12 +93,13 @@ export const api = {
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ display_name: displayName }),
     }),
-  songs: ({ account = null, q = null, tag = null, has_video = null, limit = 60, offset = 0, sort = "recent", dir = "desc" } = {}) => {
-    // sort ∈ recent | title | version | popular | liked | gens | recent_played
+  songs: ({ account = null, q = null, tag = null, has_video = null, playlist_id = null, limit = 60, offset = 0, sort = "recent", dir = "desc" } = {}) => {
+    // sort ∈ recent | title | version | popular | liked | gens | recent_played | playlist_order
     const u = new URLSearchParams();
     if (account) u.set("account", account);
     if (q) u.set("q", q);
     if (tag) u.set("tag", tag);
+    if (playlist_id != null) u.set("playlist_id", playlist_id);
     if (has_video !== null && has_video !== undefined) u.set("has_video", has_video ? "true" : "false");
     u.set("limit", limit);
     u.set("offset", offset);
@@ -106,6 +107,36 @@ export const api = {
     u.set("dir", dir);
     return req(`/api/songs?${u}`);
   },
+  playlists: () => req("/api/playlists"),
+  createPlaylist: (name) =>
+    req("/api/playlists", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ name }),
+    }),
+  playlist: (id) => req(`/api/playlists/${id}`),
+  addPlaylistSong: (playlistId, songId) =>
+    req(`/api/playlists/${playlistId}/songs`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ song_id: songId }),
+    }),
+  removePlaylistSong: (playlistId, songId) =>
+    req(`/api/playlists/${playlistId}/songs/${songId}`, { method: "DELETE" }),
+  renamePlaylist: (id, name) =>
+    req(`/api/playlists/${id}`, {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ name }),
+    }),
+  deletePlaylist: (id) =>
+    req(`/api/playlists/${id}`, { method: "DELETE" }),
+  generateMonthlyPlaylists: (allMonths = false) =>
+    req("/api/playlists/generate-monthly", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ all_months: allMonths }),
+    }),
   smartTags: () => req("/api/smart-tags"),
   topSongs: ({ by = "popular", limit = 20, account = null } = {}) => {
     const u = new URLSearchParams({ by, limit });
@@ -122,6 +153,8 @@ export const api = {
     }),
   songPlays: (songId) => req(`/api/songs/${songId}/plays`),
   song: (id) => req(`/api/songs/${id}`),
+  revealSong: (id, path = null) =>
+    req(`/api/songs/${id}/reveal${path ? `?path=${encodeURIComponent(path)}` : ""}`, { method: "POST" }),
   related: (id, limit = 20) => req(`/api/songs/${id}/related?limit=${limit}`),
   putNote: (id, body) =>
     req(`/api/songs/${id}/notes`, {
@@ -244,6 +277,12 @@ export const api = {
     return req(`/api/dj/context?${u}`);
   },
   radioShows: (limit = 30) => req(`/api/radio/shows?limit=${limit}`),
+  radioLive: ({ place = "Vancouver" } = {}) => {
+    const u = new URLSearchParams();
+    if (place) u.set("place", place);
+    return req(`/api/radio/live?${u}`);
+  },
+  radioDayparts: () => req("/api/radio/dayparts"),
   radioShow: (id) => req(`/api/radio/shows/${encodeURIComponent(id)}`),
   radioToday: ({ date = null } = {}) => {
     const u = new URLSearchParams();
@@ -256,6 +295,12 @@ export const api = {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ date, place, targetHours, airTime, force }),
+    }),
+  buildDaypartShow: ({ date = null, daypart = "morning", place = "Vancouver", targetHours = null, airTime = null, force = false, renderVoice = true } = {}) =>
+    req("/api/radio/shows/daypart", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ date, daypart, place, targetHours, airTime, force, renderVoice }),
     }),
   liveBoards: ({ q = "" } = {}) => {
     const u = new URLSearchParams();
@@ -282,4 +327,5 @@ export const mediaUrl = {
   export: (id) => `${BASE}/media/export/${id}`,
   lyricExport: (id) => `${BASE}/media/lyrics-export/${id}`,
   liveBoardRef: (id, idx) => `${BASE}/media/live_board/${encodeURIComponent(id)}/ref/${idx}`,
+  radioVoice: (showId, filename) => `${BASE}/media/radio_voice/${encodeURIComponent(showId)}/${encodeURIComponent(filename)}`,
 };

@@ -21,6 +21,17 @@
   to = "/:splat"
   status = 200
 
+# Standalone radio player routes
+[[redirects]]
+  from = "/radio"
+  to = "/live-radio.html"
+  status = 200
+
+[[redirects]]
+  from = "/live"
+  to = "/live-radio.html"
+  status = 200
+
 # SPA fallback: any unknown path (other than /api/*) returns index.html so
 # bookmark links like /song/2392 resolve. The hash router handles the rest.
 [[redirects]]
@@ -32,3 +43,4 @@
   from = "/*"
   to = "/index.html"
   status = 200
+

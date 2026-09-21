@@ -234,6 +234,58 @@ def test_video_filter():
         check("returned song has video", s.get("has_video") is True or s.get("video_path") is not None or s.get("video_only") is True)
 
 
+def test_channel_rename():
+    print("[channel rename & filter]")
+    from backend.app import rename_channel, list_channels
+    res = rename_channel("test_channel_smoke", {"display_name": "Smoke Display Name"})
+    check("rename_channel returns ok", res.get("ok") is True)
+    check("rename_channel returns display_name", res.get("display_name") == "Smoke Display Name")
+    # Reset name
+    res_reset = rename_channel("test_channel_smoke", {"display_name": ""})
+    check("reset channel name ok", res_reset.get("display_name") is None)
+    # Check main is excluded from list_channels
+    channels = list_channels()
+    check("main is excluded from channels list", not any(c["account"] == "main" for c in channels))
+
+
+def test_media_endpoints():
+    print("[media endpoints]")
+    from fastapi.testclient import TestClient
+    from backend.app import app
+    client = TestClient(app)
+    # Test a song with video (song 32)
+    r_audio = client.get("/media/audio/32")
+    check("media audio returns 200/206", r_audio.status_code in (200, 206))
+    r_video = client.get("/media/video/32")
+    check("media video returns 200/206", r_video.status_code in (200, 206))
+    r_cover = client.get("/media/cover/32")
+    check("media cover returns 200/206", r_cover.status_code in (200, 206))
+
+
+def test_related_and_lyrics():
+    print("[related & lyrics test]")
+    from fastapi.testclient import TestClient
+    from backend.app import app
+    from backend.lyrics import parse_lyrics_text
+
+    client = TestClient(app)
+    r_rel = client.get("/api/songs/32/related")
+    check("related returns 200", r_rel.status_code == 200)
+    items = r_rel.json()
+    check("related returns list", isinstance(items, list))
+    if items:
+        first = items[0]
+        check("related item has id", "id" in first)
+        check("related item has title", "title" in first)
+        check("related item has account", "account" in first)
+        check("related item has duration", "duration" in first)
+
+    # Test bracketed cues
+    cues = "[Instrumental]\n[Intro]\n[heavy bass synth]\n[Outro]"
+    parsed_cues = parse_lyrics_text(cues)
+    check("bracketed cues are not dropped", len(parsed_cues) >= 1)
+
+
 def main():
     test_lyrics_parser()
     test_derivatives()
@@ -241,6 +293,9 @@ def main():
     test_indexer_roundtrip()
     test_ai_registry()
     test_video_filter()
+    test_channel_rename()
+    test_media_endpoints()
+    test_related_and_lyrics()
     print()
     print(f"PASSED: {PASSED}")
     print(f"FAILED: {len(FAILED)}")
@@ -251,3 +306,4 @@ def main():
 
 if __name__ == "__main__":
     main()
+

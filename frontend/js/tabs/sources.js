@@ -1,8 +1,85 @@
-import { el, clear } from "../util.js";
+import { el, clear, toast } from "../util.js";
 import { api, mediaUrl } from "../api.js";
 
 export function renderSources(body, song) {
   clear(body);
+
+  // ── Local Sources on PC ─────────────────────────────────────────
+  const localPaths = [
+    { type: "Audio (MP3)", path: song.mp3_path, icon: "🎵", url: mediaUrl.audio(song.id) },
+    { type: "Video (MP4)", path: song.video_path, icon: "🎬", url: mediaUrl.video(song.id) },
+    { type: "Cover Art", path: song.jpg_path, icon: "🖼", url: mediaUrl.cover(song.id) },
+    { type: "Lyrics Text", path: song.txt_path, icon: "📄", url: null },
+    { type: "WAV Audio", path: song.wav_path, icon: "🔊", url: null },
+    { type: "MIDI Data", path: song.mid_path, icon: "🎹", url: null },
+  ].filter((item) => Boolean(item.path));
+
+  if (localPaths.length > 0) {
+    const grp = el("div", { class: "derivative-group local-source-group" });
+    grp.append(el("h4", {}, `Local Sources (${localPaths.length})`));
+
+    for (const item of localPaths) {
+      const card = el("div", { class: "local-source-card" });
+      const top = el("div", { class: "local-source-top" });
+      const typeWrap = el("div", { class: "local-source-type-wrap" });
+      typeWrap.append(el("span", { class: "local-source-icon" }, item.icon));
+      typeWrap.append(el("span", { class: "local-source-type" }, item.type));
+      top.append(typeWrap);
+
+      const actions = el("div", { class: "local-source-actions" });
+
+      const revealBtn = el("button", {
+        type: "button",
+        class: "btn compact",
+        title: `Reveal ${item.type} in Explorer`,
+      }, "📂 Reveal");
+      revealBtn.onclick = async () => {
+        revealBtn.disabled = true;
+        try {
+          await api.revealSong(song.id, item.path);
+          toast("Opened in Explorer");
+        } catch (e) {
+          toast("Reveal: " + e.message);
+        }
+        revealBtn.disabled = false;
+      };
+      actions.append(revealBtn);
+
+      const copyBtn = el("button", {
+        type: "button",
+        class: "btn compact",
+        title: "Copy path",
+      }, "📋 Copy");
+      copyBtn.onclick = async () => {
+        try {
+          await navigator.clipboard.writeText(item.path);
+          toast("Copied path");
+        } catch {
+          toast("Could not copy path");
+        }
+      };
+      actions.append(copyBtn);
+
+      if (item.url) {
+        const streamLink = el("a", {
+          href: item.url,
+          target: "_blank",
+          class: "btn compact",
+          title: "Direct stream link",
+        }, "↗ Stream");
+        actions.append(streamLink);
+      }
+
+      top.append(actions);
+      card.append(top);
+
+      const pathEl = el("div", { class: "local-source-path", title: item.path }, item.path);
+      card.append(pathEl);
+
+      grp.append(card);
+    }
+    body.append(grp);
+  }
 
   const hasSources = song.sources && song.sources.length;
   const hasDerivs = song.derivatives && song.derivatives.length;
