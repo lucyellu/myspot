@@ -1437,20 +1437,24 @@ def radio_dayparts():
     return {"dayparts": DAYPARTS}
 
 
-@app.get("/api/radio/stream.mp3")
-async def radio_stream_mp3():
+@app.api_route("/api/radio/stream.mp3", methods=["GET", "HEAD"])
+async def radio_stream_mp3(request: Request):
+    headers = {
+        "Cache-Control": "no-cache, no-store, must-revalidate",
+        "Pragma": "no-cache",
+        "Expires": "0",
+        "Connection": "keep-alive",
+        "Icy-Name": "myspot 24/7 AI Radio",
+        "Icy-Genre": "AI / Indie / Lo-Fi",
+    }
+    if request.method == "HEAD":
+        return Response(media_type="audio/mpeg", headers=headers)
     return StreamingResponse(
         live_mp3_stream_generator(),
         media_type="audio/mpeg",
-        headers={
-            "Cache-Control": "no-cache, no-store, must-revalidate",
-            "Pragma": "no-cache",
-            "Expires": "0",
-            "Connection": "keep-alive",
-            "Icy-Name": "myspot 24/7 AI Radio",
-            "Icy-Genre": "AI / Indie / Lo-Fi",
-        },
+        headers=headers,
     )
+
 
 
 @app.get("/api/radio/stream/meta")
@@ -2999,9 +3003,10 @@ def live_radio():
     return FileResponse(page, headers={"Cache-Control": "no-cache, no-store, must-revalidate"})
 
 
-@app.get("/stream")
+@app.api_route("/stream", methods=["GET", "HEAD"])
 def live_stream_redirect():
     return RedirectResponse(url="/api/radio/stream.mp3")
+
 
 
 @app.on_event("startup")
