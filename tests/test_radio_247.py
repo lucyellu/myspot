@@ -113,3 +113,54 @@ def test_stream_endpoints():
     assert r_meta.status_code == 200
     assert r_meta.json().get("ok") is True
 
+
+def test_vancouver_weather_and_12h_time():
+    from backend.radio import (
+        format_12h_time,
+        format_spoken_date,
+        get_vancouver_weather,
+        _build_daypart_segments,
+    )
+
+    # 1. 12-hour AM/PM time tests (never 24-hour time)
+    assert format_12h_time("06:00") == "6:00 AM"
+    assert format_12h_time("14:30") == "2:30 PM"
+    assert format_12h_time("22:00") == "10:00 PM"
+    assert format_12h_time("00:15") == "12:15 AM"
+    assert format_12h_time("12:00") == "12:00 PM"
+    assert "24:" not in format_12h_time("00:00")
+    assert "14:" not in format_12h_time("14:00")
+
+    # 2. Spoken date tests
+    d = date(2026, 9, 20)
+    spoken_d = format_spoken_date(d)
+    assert "Sunday" in spoken_d
+    assert "September 20th" in spoken_d
+
+    # 3. Weather fetch test
+    wx = get_vancouver_weather("Vancouver, Canada")
+    assert "temperature_c" in wx
+    assert isinstance(wx["temperature_c"], (int, float))
+    assert "degrees Celsius" in wx["phrase"]
+
+    # 4. Daypart talk segments contain spoken date, 12h time, and Celsius weather
+    dummy_songs = [
+        {"id": i, "title": f"Song {i}", "duration": 180, "account": "main"}
+        for i in range(1, 15)
+    ]
+    segs = _build_daypart_segments(dummy_songs, d, "morning", place="Vancouver, Canada", air_time="06:00")
+    talk_segs = [s for s in segs if s.get("type") == "talk"]
+
+    sign_on = talk_segs[0]
+    assert "Vancouver, Canada" in sign_on["text"]
+    assert "6:00 AM" in sign_on["text"]
+    assert "Sunday, September 20th" in sign_on["text"]
+    assert "degrees Celsius" in sign_on["text"]
+
+    # Verify weather checkpoint has Celsius and 12h AM/PM
+    wx_checkpoint = next(s for s in talk_segs if "Weather" in s.get("title", ""))
+    assert "degrees Celsius" in wx_checkpoint["text"]
+    assert ("AM" in wx_checkpoint["text"] or "PM" in wx_checkpoint["text"])
+    assert "Vancouver, Canada" in wx_checkpoint["text"]
+
+

@@ -117,6 +117,9 @@ def get_stream_metadata() -> dict:
             "segment_offset": state.get("segmentOffset", 0),
             "segment_duration": active_seg.get("duration", 180),
             "clock": state.get("clock"),
+            "date": state.get("date"),
+            "place": state.get("place", "Vancouver, Canada"),
+            "weather": state.get("weather"),
             "now": state.get("now"),
         }
     except Exception as exc:
