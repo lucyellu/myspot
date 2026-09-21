@@ -17,7 +17,7 @@ from pathlib import Path  # noqa
 import httpx
 from fastapi import FastAPI, HTTPException, Query, Request, Body, UploadFile, File
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.responses import FileResponse, JSONResponse, StreamingResponse
+from fastapi.responses import FileResponse, JSONResponse, StreamingResponse, RedirectResponse
 from fastapi.staticfiles import StaticFiles
 
 from . import config
@@ -42,10 +42,15 @@ from .ai import inspire as inspire_mod
 from .render import render_slideshow, render_lyric_video, have_ffmpeg
 from .radio import (
     build_weekday_morning_show,
+    build_daypart_show,
+    get_live_station_state,
     list_radio_shows,
     load_radio_show,
     load_weekday_morning_show,
+    DAYPARTS,
+    RADIO_SHOWS_DIR,
 )
+from .radio_stream import live_mp3_stream_generator, get_stream_metadata
 
 
 app = FastAPI(title="myspot", version="0.1.0")
@@ -287,16 +292,43 @@ def list_channels():
 
     result = []
     for k, v in grouped.items():
-        # Find the best Suno handle for this canonical channel
+        if k in ("main", "sunosync", ""):
+            continue
+        # Find the best Suno handle and avatar for this canonical channel
         handle = None
+        avatar_url = None
         for raw in raw_accounts[k]:
-            handle = _suno_meta.handle_for_account(raw)
-            if handle:
+            if not handle:
+                handle = _suno_meta.handle_for_account(raw)
+            if not avatar_url:
+                avatar_url = _suno_meta.avatar_for_account(raw)
+            if handle and avatar_url:
                 break
+
+        # Fallback: check metadata from song samples if not found by account name
+        if not handle or not avatar_url:
+            matched_raws = raw_accounts[k]
+            if matched_raws:
+                placeholders = ",".join("?" * len(matched_raws))
+                song_samples = _conn.execute(
+                    f"SELECT suno_id FROM songs WHERE account IN ({placeholders}) AND suno_id IS NOT NULL LIMIT 20",
+                    matched_raws,
+                ).fetchall()
+                for s in song_samples:
+                    meta = _suno_meta.lookup(s["suno_id"])
+                    if meta:
+                        if not handle and meta.get("suno_handle"):
+                            handle = meta["suno_handle"]
+                        if not avatar_url and meta.get("avatar_image_url"):
+                            avatar_url = meta["avatar_image_url"]
+                        if handle and avatar_url:
+                            break
+
         entry = {
             "account": k,
             "song_count": v,
             "suno_handle": handle,
+            "avatar_url": avatar_url,
             "display_name": display_names.get(k),
         }
         result.append(entry)
@@ -305,13 +337,19 @@ def list_channels():
 
 @app.put("/api/channels/{account}/name")
 def rename_channel(account: str, body: dict = Body(...)):
+    cn = canonical_account(account)
     display_name = (body.get("display_name") or "").strip() or None
-    _conn.execute(
-        "INSERT INTO channel_settings(account, display_name) VALUES(?, ?) "
-        "ON CONFLICT(account) DO UPDATE SET display_name = excluded.display_name",
-        (account, display_name),
-    )
-    return {"ok": True, "account": account, "display_name": display_name}
+    with _db_lock:
+        _conn.execute(
+            "CREATE TABLE IF NOT EXISTS channel_settings (account TEXT PRIMARY KEY, display_name TEXT)"
+        )
+        _conn.execute(
+            "INSERT INTO channel_settings(account, display_name) VALUES(?, ?) "
+            "ON CONFLICT(account) DO UPDATE SET display_name = excluded.display_name",
+            (cn, display_name),
+        )
+    return {"ok": True, "account": cn, "display_name": display_name}
+
 
 
 # ----------------------------- Songs --------------------------------
@@ -322,9 +360,10 @@ def list_songs(
     q: str | None = None,
     tag: str | None = None,
     has_video: bool | None = None,
+    playlist_id: int | None = None,
     limit: int = Query(60, ge=1, le=500),
     offset: int = Query(0, ge=0),
-    sort: str = Query("recent", regex="^(recent|title|version|popular|liked|gens|recent_played)$"),
+    sort: str = Query("recent", regex="^(recent|title|version|popular|liked|gens|recent_played|playlist_order)$"),
     dir: str = Query("desc", regex="^(asc|desc)$"),
 ):
     if hasattr(sort, "default"): sort = sort.default
@@ -334,6 +373,9 @@ def list_songs(
 
     where = []
     args: list = []
+    if playlist_id is not None:
+        where.append("s.id IN (SELECT song_id FROM playlist_songs WHERE playlist_id = ?)")
+        args.append(playlist_id)
     if account:
         raw_accounts = _expand_account(account)
         placeholders = ",".join("?" * len(raw_accounts))
@@ -364,6 +406,7 @@ def list_songs(
             where.append(f"NOT {video_sql}")
 
     D, A = ("DESC", "ASC") if dir == "desc" else ("ASC", "DESC")
+    p_id_int = int(playlist_id or 0)
     order = {
         # Sort by when Suno actually made the track. s.id is only insertion
         # order, so a re-index reshuffles "recent" into meaningless order.
@@ -374,6 +417,7 @@ def list_songs(
         "liked":        f"s.suno_upvote_count {D} NULLS LAST, s.id {D}",
         "gens":         f"gens_count {D}, s.id {D}",
         "recent_played": f"last_played_at {D} NULLS LAST, s.id {D}",
+        "playlist_order": f"COALESCE((SELECT ps.idx FROM playlist_songs ps WHERE ps.playlist_id = {p_id_int} AND ps.song_id = s.id), 999999) {A}, s.id {D}",
     }[sort]
 
     sql = f"""
@@ -453,6 +497,161 @@ def smart_tag_counts():
         out.append({"tag": name, "n": n})
     out.sort(key=lambda r: -r["n"])
     return out
+
+
+# ----------------------------- Playlists ----------------------------
+
+def _ensure_monthly_playlist(conn, ym_str: str | None = None) -> int:
+    """Ensure a monthly playlist named YYYY_MM (e.g. '2026_09') exists.
+    Tracks are only added to it when played or directly added by the user."""
+    if not ym_str:
+        ym_str = datetime.now().strftime("%Y_%m")
+    
+    with _db_lock:
+        row = conn.execute("SELECT id FROM playlists WHERE name = ?", (ym_str,)).fetchone()
+        if not row:
+            try:
+                cur = conn.execute("INSERT INTO playlists (name) VALUES (?)", (ym_str,))
+                playlist_id = cur.lastrowid
+            except Exception:
+                row2 = conn.execute("SELECT id FROM playlists WHERE name = ?", (ym_str,)).fetchone()
+                playlist_id = row2["id"] if row2 else None
+        else:
+            playlist_id = row["id"]
+        return playlist_id
+
+
+@app.get("/api/playlists")
+def list_playlists():
+    _ensure_monthly_playlist(_conn)
+    rows = _conn.execute(
+        """SELECT p.id, p.name, p.created_at,
+                  COUNT(ps.song_id) AS song_count,
+                  (SELECT ps2.song_id FROM playlist_songs ps2 WHERE ps2.playlist_id = p.id ORDER BY ps2.idx ASC LIMIT 1) AS cover_song_id
+           FROM playlists p
+           LEFT JOIN playlist_songs ps ON ps.playlist_id = p.id
+           GROUP BY p.id
+           ORDER BY p.name COLLATE NOCASE ASC"""
+    ).fetchall()
+    return _rows(rows)
+
+
+@app.post("/api/playlists/generate-monthly")
+def generate_monthly_playlists(payload: dict = Body({})):
+    """Generate monthly playlist shells for all months (or current month)."""
+    all_months = payload.get("all_months", False)
+    if all_months:
+        rows = _conn.execute(
+            """SELECT DISTINCT SUBSTR(played_at, 1, 7) AS ym
+               FROM play_history
+               WHERE played_at IS NOT NULL AND LENGTH(played_at) >= 7
+               ORDER BY ym ASC"""
+        ).fetchall()
+        created = []
+        for r in rows:
+            ym = r["ym"]
+            if ym and re.match(r"^\d{4}-\d{2}$", ym):
+                ym_formatted = ym.replace("-", "_")
+                pid = _ensure_monthly_playlist(_conn, ym_formatted)
+                created.append(ym_formatted)
+        return {"ok": True, "playlists": created}
+    else:
+        ym_formatted = datetime.now().strftime("%Y_%m")
+        pid = _ensure_monthly_playlist(_conn, ym_formatted)
+        return {"ok": True, "playlist": ym_formatted, "id": pid}
+
+
+@app.post("/api/playlists")
+def create_playlist(payload: dict = Body(...)):
+    name = (payload.get("name") or "").strip()
+    if not name:
+        raise HTTPException(400, "Playlist name cannot be empty")
+    with _db_lock:
+        try:
+            cur = _conn.execute("INSERT INTO playlists (name) VALUES (?)", (name,))
+            playlist_id = cur.lastrowid
+        except Exception as e:
+            if "UNIQUE" in str(e).upper():
+                raise HTTPException(400, f"A playlist named '{name}' already exists")
+            raise HTTPException(500, f"Could not create playlist: {e}")
+    row = _conn.execute("SELECT id, name, created_at FROM playlists WHERE id = ?", (playlist_id,)).fetchone()
+    d = dict(row)
+    d["song_count"] = 0
+    d["cover_song_id"] = None
+    return d
+
+
+@app.get("/api/playlists/{playlist_id}")
+def get_playlist(playlist_id: int):
+    p = _conn.execute("SELECT id, name, created_at FROM playlists WHERE id = ?", (playlist_id,)).fetchone()
+    if not p:
+        raise HTTPException(404, "Playlist not found")
+    count = _conn.execute("SELECT COUNT(*) FROM playlist_songs WHERE playlist_id = ?", (playlist_id,)).fetchone()[0]
+    d = dict(p)
+    d["song_count"] = count
+    return d
+
+
+@app.post("/api/playlists/{playlist_id}/songs")
+def add_song_to_playlist(playlist_id: int, payload: dict = Body(...)):
+    p = _conn.execute("SELECT id, name FROM playlists WHERE id = ?", (playlist_id,)).fetchone()
+    if not p:
+        raise HTTPException(404, "Playlist not found")
+    
+    song_ids = payload.get("song_ids")
+    if song_ids is None and "song_id" in payload:
+        song_ids = [payload["song_id"]]
+    if not song_ids:
+        raise HTTPException(400, "No song_id provided")
+
+    with _db_lock:
+        max_idx_row = _conn.execute("SELECT MAX(idx) FROM playlist_songs WHERE playlist_id = ?", (playlist_id,)).fetchone()
+        next_idx = (max_idx_row[0] + 1) if (max_idx_row and max_idx_row[0] is not None) else 0
+        added = 0
+        for sid in song_ids:
+            try:
+                _conn.execute(
+                    "INSERT INTO playlist_songs (playlist_id, song_id, idx) VALUES (?, ?, ?)",
+                    (playlist_id, sid, next_idx)
+                )
+                next_idx += 1
+                added += 1
+            except Exception:
+                pass  # already in playlist or invalid id
+
+    count = _conn.execute("SELECT COUNT(*) FROM playlist_songs WHERE playlist_id = ?", (playlist_id,)).fetchone()[0]
+    return {"playlist_id": playlist_id, "playlist_name": p["name"], "added": added, "total": count}
+
+
+@app.delete("/api/playlists/{playlist_id}/songs/{song_id}")
+def remove_song_from_playlist(playlist_id: int, song_id: int):
+    with _db_lock:
+        _conn.execute("DELETE FROM playlist_songs WHERE playlist_id = ? AND song_id = ?", (playlist_id, song_id))
+    count = _conn.execute("SELECT COUNT(*) FROM playlist_songs WHERE playlist_id = ?", (playlist_id,)).fetchone()[0]
+    return {"ok": True, "playlist_id": playlist_id, "song_id": song_id, "total": count}
+
+
+@app.patch("/api/playlists/{playlist_id}")
+def rename_playlist(playlist_id: int, payload: dict = Body(...)):
+    name = (payload.get("name") or "").strip()
+    if not name:
+        raise HTTPException(400, "Playlist name cannot be empty")
+    with _db_lock:
+        try:
+            _conn.execute("UPDATE playlists SET name = ? WHERE id = ?", (name, playlist_id))
+        except Exception as e:
+            if "UNIQUE" in str(e).upper():
+                raise HTTPException(400, f"A playlist named '{name}' already exists")
+            raise HTTPException(500, f"Could not rename playlist: {e}")
+    return {"id": playlist_id, "name": name}
+
+
+@app.delete("/api/playlists/{playlist_id}")
+def delete_playlist(playlist_id: int):
+    with _db_lock:
+        _conn.execute("DELETE FROM playlist_songs WHERE playlist_id = ?", (playlist_id,))
+        _conn.execute("DELETE FROM playlists WHERE id = ?", (playlist_id,))
+    return {"ok": True, "id": playlist_id}
 
 
 # ----------------------------- Live boards --------------------------
@@ -601,51 +800,152 @@ def get_song(song_id: int):
     return s
 
 
+@app.post("/api/songs/{song_id}/reveal")
+def reveal_song_file(song_id: int, path: str | None = Query(None)):
+    song = _conn.execute(
+        "SELECT mp3_path, video_path, jpg_path, txt_path, wav_path, mid_path FROM songs WHERE id = ?",
+        (song_id,),
+    ).fetchone()
+    if not song:
+        raise HTTPException(404, "Song not found")
+    target_str = path or song["mp3_path"] or song["video_path"] or song["jpg_path"] or song["txt_path"] or song["wav_path"] or song["mid_path"]
+    if not target_str:
+        raise HTTPException(404, "No local file path for this song")
+
+    target = os.path.normpath(target_str)
+    target_path = Path(target)
+    if not target_path.exists():
+        if target_path.parent.exists():
+            target = str(target_path.parent)
+        else:
+            raise HTTPException(404, f"File not found on disk: {target}")
+
+    import platform
+    import subprocess
+    try:
+        if platform.system() == "Windows":
+            if os.path.isfile(target):
+                # Using a single string with quotes around path avoids Python list2cmdline quoting the /select switch
+                subprocess.Popen(f'explorer /select,"{os.path.normpath(target)}"')
+            else:
+                subprocess.Popen(f'explorer "{os.path.normpath(target)}"')
+        elif platform.system() == "Darwin":
+            if os.path.isfile(target):
+                subprocess.Popen(["open", "-R", target])
+            else:
+                subprocess.Popen(["open", target])
+        else:
+            if os.path.isfile(target):
+                subprocess.Popen(["xdg-open", os.path.dirname(target)])
+            else:
+                subprocess.Popen(["xdg-open", target])
+    except Exception as e:
+        raise HTTPException(500, f"Could not reveal file: {e}")
+    return {"ok": True, "path": target}
+
+
 @app.get("/api/songs/{song_id}/related")
 def related_songs(song_id: int, limit: int = Query(20, ge=1, le=100)):
     s = _conn.execute(
-        "SELECT account, base_title, version, mfcc FROM songs WHERE id=?", (song_id,)
+        "SELECT id, account, title, base_title, version, genre, mfcc FROM songs WHERE id=?", (song_id,)
     ).fetchone()
     if s is None:
         raise HTTPException(404, "song not found")
 
-    if s["mfcc"]:
-        from .fingerprint import cosine_sim
-        src_vec = json.loads(s["mfcc"])
-        rows = _conn.execute(
-            "SELECT id, title, version, account, jpg_path, duration, mfcc FROM songs WHERE id != ? AND mfcc IS NOT NULL",
-            (song_id,)
-        ).fetchall()
-        scored = []
-        for row in rows:
-            try:
-                vec = json.loads(row["mfcc"])
-                sim = cosine_sim(src_vec, vec)
-            except Exception:
-                continue
-            d = {k: row[k] for k in ("id", "title", "version", "account", "jpg_path", "duration")}
-            d["reason"] = "audio"
-            d["similarity"] = round(sim, 3)
-            scored.append(d)
-        scored.sort(key=lambda x: -x["similarity"])
-        return scored[:limit]
+    song_fields = (
+        "id, title, base_title, version, account, genre, bpm, duration, "
+        "mp3_path, video_path, jpg_path, liked, suno_id, suno_play_count, suno_upvote_count, "
+        "(SELECT COUNT(*) FROM gens g WHERE g.song_id = songs.id) AS gens_count, "
+        "(video_path IS NOT NULL AND mp3_path IS NULL) AS video_only"
+    )
 
-    siblings = _conn.execute(
-        """SELECT id, title, version, account, jpg_path, duration, 'sibling' AS reason
-           FROM songs WHERE account=? AND base_title=? AND id != ?
-           ORDER BY version""",
-        (s["account"], s["base_title"], song_id),
-    ).fetchall()
+    seen = {song_id}
+    results = []
 
-    same_account = _conn.execute(
-        """SELECT id, title, version, account, jpg_path, duration, 'channel' AS reason
-           FROM songs WHERE account=? AND base_title != ? AND id != ?
-           ORDER BY id DESC LIMIT ?""",
-        (s["account"], s["base_title"], song_id, max(0, limit - len(siblings))),
-    ).fetchall()
+    def add_rows(rows, reason):
+        for r in rows:
+            if r["id"] not in seen and len(results) < limit:
+                seen.add(r["id"])
+                d = dict(r)
+                if "reason" not in d or not d["reason"]:
+                    d["reason"] = reason
+                results.append(d)
 
-    items = _rows(siblings) + _rows(same_account)
-    return items[:limit]
+    # 1. Direct Parent / Child derivatives from relationships table (remixes, covers, versions)
+    rel_rows = _conn.execute(f"""
+        SELECT {song_fields}, r.kind AS reason
+        FROM relationships r
+        JOIN songs ON (songs.id = r.child_id AND r.parent_id = ?) OR (songs.id = r.parent_id AND r.child_id = ?)
+    """, (song_id, song_id)).fetchall()
+    add_rows(rel_rows, "relationship")
+
+    # 2. Exact same base_title (siblings/versions across same account and all accounts)
+    base_title = s["base_title"]
+    if base_title:
+        siblings = _conn.execute(f"""
+            SELECT {song_fields}, 'same_name' AS reason
+            FROM songs
+            WHERE LOWER(base_title) = LOWER(?) AND id != ?
+            ORDER BY (account = ?) DESC, version ASC, id ASC
+        """, (base_title, song_id, s["account"])).fetchall()
+        add_rows(siblings, "same_name")
+
+    # 3. Substring / Remix / Cover Title Matches
+    if base_title and len(base_title) >= 3:
+        title_matches = _conn.execute(f"""
+            SELECT {song_fields}, 'title_match' AS reason
+            FROM songs
+            WHERE (title LIKE ? OR base_title LIKE ?) AND id != ?
+            ORDER BY suno_play_count DESC, id DESC
+            LIMIT ?
+        """, (f"%{base_title}%", f"%{base_title}%", song_id, limit)).fetchall()
+        add_rows(title_matches, "title_match")
+
+    # 4. Audio Fingerprint (MFCC) Cosine Similarity
+    if s["mfcc"] and len(results) < limit:
+        try:
+            from .fingerprint import cosine_sim
+            src_vec = json.loads(s["mfcc"])
+            mfcc_rows = _conn.execute(
+                f"SELECT {song_fields}, mfcc FROM songs WHERE id != ? AND mfcc IS NOT NULL"
+            ).fetchall()
+            scored = []
+            for row in mfcc_rows:
+                if row["id"] in seen:
+                    continue
+                try:
+                    vec = json.loads(row["mfcc"])
+                    sim = cosine_sim(src_vec, vec)
+                    if sim >= 0.70:
+                        d = dict(row)
+                        d.pop("mfcc", None)
+                        d["reason"] = "audio_fingerprint"
+                        d["similarity"] = round(sim, 3)
+                        scored.append(d)
+                except Exception:
+                    continue
+            scored.sort(key=lambda x: -x["similarity"])
+            for item in scored:
+                if item["id"] not in seen and len(results) < limit:
+                    seen.add(item["id"])
+                    results.append(item)
+        except Exception:
+            pass
+
+    # 5. Genre / Style matching (fills remainder with matching musical genres instead of random songs)
+    if len(results) < limit and s["genre"]:
+        first_genre = s["genre"].split(",")[0].strip()
+        if first_genre and len(first_genre) >= 3:
+            genre_rows = _conn.execute(f"""
+                SELECT {song_fields}, 'genre' AS reason
+                FROM songs
+                WHERE genre LIKE ? AND id != ?
+                ORDER BY suno_play_count DESC, id DESC
+                LIMIT ?
+            """, (f"%{first_genre}%", song_id, limit - len(results))).fetchall()
+            add_rows(genre_rows, "genre")
+
+    return results
 
 
 @app.post("/api/fingerprint-all")
@@ -705,6 +1005,27 @@ def record_play(song_id: int, payload: dict = Body({})):
             "INSERT INTO play_history(song_id, ms_played) VALUES(?,?)",
             (song_id, ms_played),
         )
+        ym_str = datetime.now().strftime("%Y_%m")
+        p_row = _conn.execute("SELECT id FROM playlists WHERE name = ?", (ym_str,)).fetchone()
+        if not p_row:
+            cur = _conn.execute("INSERT INTO playlists (name) VALUES (?)", (ym_str,))
+            playlist_id = cur.lastrowid
+        else:
+            playlist_id = p_row["id"]
+
+        exists = _conn.execute(
+            "SELECT 1 FROM playlist_songs WHERE playlist_id = ? AND song_id = ?",
+            (playlist_id, song_id)
+        ).fetchone()
+        if not exists:
+            max_idx_row = _conn.execute(
+                "SELECT MAX(idx) FROM playlist_songs WHERE playlist_id = ?", (playlist_id,)
+            ).fetchone()
+            next_idx = (max_idx_row[0] + 1) if (max_idx_row and max_idx_row[0] is not None) else 0
+            _conn.execute(
+                "INSERT INTO playlist_songs (playlist_id, song_id, idx) VALUES (?, ?, ?)",
+                (playlist_id, song_id, next_idx)
+            )
     return {"ok": True}
 
 
@@ -1105,6 +1426,38 @@ def radio_shows(limit: int = Query(30, ge=1, le=100)):
     return {"items": list_radio_shows(limit)}
 
 
+@app.get("/api/radio/live")
+def radio_live(place: str = Query("Vancouver")):
+    with _db_lock:
+        return get_live_station_state(_conn, place=place)
+
+
+@app.get("/api/radio/dayparts")
+def radio_dayparts():
+    return {"dayparts": DAYPARTS}
+
+
+@app.get("/api/radio/stream.mp3")
+async def radio_stream_mp3():
+    return StreamingResponse(
+        live_mp3_stream_generator(),
+        media_type="audio/mpeg",
+        headers={
+            "Cache-Control": "no-cache, no-store, must-revalidate",
+            "Pragma": "no-cache",
+            "Expires": "0",
+            "Connection": "keep-alive",
+            "Icy-Name": "myspot 24/7 AI Radio",
+            "Icy-Genre": "AI / Indie / Lo-Fi",
+        },
+    )
+
+
+@app.get("/api/radio/stream/meta")
+def radio_stream_meta():
+    return get_stream_metadata()
+
+
 @app.get("/api/radio/shows/today")
 def radio_today(show_date: str | None = None):
     show = load_weekday_morning_show(show_date)
@@ -1131,6 +1484,22 @@ def radio_build_weekday_morning(payload: dict = Body(default_factory=dict)):
             target_hours=float((payload or {}).get("targetHours") or 1),
             air_time=(payload or {}).get("airTime") or "06:00",
             force=bool((payload or {}).get("force")),
+        )
+
+
+@app.post("/api/radio/shows/daypart")
+def radio_build_daypart(payload: dict = Body(default_factory=dict)):
+    with _db_lock:
+        target_h = (payload or {}).get("targetHours")
+        return build_daypart_show(
+            _conn,
+            show_date=(payload or {}).get("date"),
+            daypart=(payload or {}).get("daypart") or "morning",
+            place=(payload or {}).get("place") or "Vancouver",
+            target_hours=float(target_h) if target_h is not None else None,
+            air_time=(payload or {}).get("airTime"),
+            force=bool((payload or {}).get("force")),
+            render_voice=bool((payload or {}).get("renderVoice", True)),
         )
 
 
@@ -2155,12 +2524,17 @@ def media_audio(song_id: int, request: Request):
     ).fetchone()
     if row is None or not (row["mp3_path"] or row["video_path"]):
         raise HTTPException(404, "audio not found")
-    # No mp3 (Suno's audio_url returned 403 for this clip) — fall back to the
-    # .mp4 render. <audio> elements happily play an mp4's audio track.
-    path, media_type = (
-        (row["mp3_path"], "audio/mpeg") if row["mp3_path"]
-        else (row["video_path"], "video/mp4")
-    )
+
+    mp3_path = row["mp3_path"] if row["mp3_path"] and os.path.exists(row["mp3_path"]) else None
+    video_path = row["video_path"] if row["video_path"] and os.path.exists(row["video_path"]) else None
+
+    if mp3_path:
+        path, media_type = mp3_path, "audio/mpeg"
+    elif video_path:
+        path, media_type = video_path, "video/mp4"
+    else:
+        raise HTTPException(404, "audio file missing")
+
     if not _under(path, _media_roots()):
         raise HTTPException(403, "forbidden")
     return _serve_media_file(request, path, media_type=media_type)
@@ -2218,6 +2592,19 @@ def media_cover(song_id: int):
                 )
             except Exception:
                 pass
+            if not thumb_path.exists():
+                try:
+                    subprocess.run(
+                        [
+                            "ffmpeg", "-y", "-ss", "00:00:00", "-i", row["video_path"],
+                            "-vframes", "1", "-q:v", "2", str(thumb_path)
+                        ],
+                        stdout=subprocess.DEVNULL,
+                        stderr=subprocess.DEVNULL,
+                        timeout=10,
+                    )
+                except Exception:
+                    pass
         if thumb_path.exists():
             resp = FileResponse(str(thumb_path))
             resp.headers["Cache-Control"] = "public, max-age=86400"
@@ -2245,6 +2632,17 @@ def media_gen(gen_id: int):
     if not _under(row["file_path"], _media_roots()):
         raise HTTPException(403, "forbidden")
     return FileResponse(row["file_path"])
+
+
+@app.get("/media/radio_voice/{show_id}/{filename}")
+def media_radio_voice(show_id: str, filename: str, request: Request):
+    safe_show_id = "".join(ch for ch in show_id if ch.isalnum() or ch in "-_")
+    safe_filename = "".join(ch for ch in filename if ch.isalnum() or ch in ".-_")
+    voice_path = RADIO_SHOWS_DIR / safe_show_id / "voice" / safe_filename
+    if not voice_path.exists():
+        raise HTTPException(404, "voice clip not found")
+    media_type = "audio/mpeg" if safe_filename.endswith(".mp3") else "audio/wav"
+    return _serve_media_file(request, str(voice_path), media_type=media_type)
 
 
 # ----------------------------- Maintenance --------------------------
@@ -2590,6 +2988,20 @@ def index():
             status_code=503,
         )
     return FileResponse(idx, headers={"Cache-Control": "no-cache, no-store, must-revalidate"})
+
+
+@app.get("/radio")
+@app.get("/live")
+def live_radio():
+    page = FRONTEND_DIR / "live-radio.html"
+    if not page.exists():
+        page = FRONTEND_DIR / "index.html"
+    return FileResponse(page, headers={"Cache-Control": "no-cache, no-store, must-revalidate"})
+
+
+@app.get("/stream")
+def live_stream_redirect():
+    return RedirectResponse(url="/api/radio/stream.mp3")
 
 
 @app.on_event("startup")

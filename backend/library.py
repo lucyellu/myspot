@@ -274,6 +274,8 @@ def index_suno_library(conn, cache: SunoSyncCache, meta_db: SunoMetaDB | None = 
                 lyrics_rows = parse_lyrics_file(txt) if txt_path_str else []
                 if not lyrics_rows and meta_entry.get("lyrics"):
                     lyrics_rows = parse_lyrics_text(meta_entry["lyrics"])
+                if not lyrics_rows and prompt:
+                    lyrics_rows = parse_lyrics_text(prompt)
                 if lyrics_rows:
                     conn.execute("DELETE FROM lyric_lines WHERE song_id=?", (song_id,))
                     conn.execute("DELETE FROM lyric_fts WHERE song_id=?", (song_id,))

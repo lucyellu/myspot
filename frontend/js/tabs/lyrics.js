@@ -3,15 +3,33 @@ import { el, clear, toast } from "../util.js";
 
 export async function renderLyrics(body, song) {
   clear(body);
-  if (!song.lyrics || song.lyrics.length === 0) {
-    body.append(el("div", { class: "empty-state" }, "No lyrics found in the .txt file."));
+
+  let rawLyrics = song.lyrics || [];
+  if ((!rawLyrics || rawLyrics.length === 0) && song.prompt && song.prompt.trim()) {
+    // Parse on the client if backend had not indexed lines yet
+    const lines = song.prompt.split("\n").map((l) => l.trim()).filter(Boolean);
+    let sec = null;
+    rawLyrics = [];
+    for (let i = 0; i < lines.length; i++) {
+      const line = lines[i];
+      const m = line.match(/^\s*\[([^\]]+)\]\s*$/);
+      if (m && /^(verse|chorus|bridge|hook|intro|outro|drop|solo|instrumental)/i.test(m[1].trim())) {
+        sec = m[1].trim();
+      } else {
+        rawLyrics.push({ idx: rawLyrics.length, text: m ? m[1].trim() : line, section: sec });
+      }
+    }
+  }
+
+  if (!rawLyrics || rawLyrics.length === 0) {
+    body.append(el("div", { class: "empty-state" }, "No lyrics found for this song."));
     return;
   }
 
   let health = { ffmpeg: false };
   try { health = await api.health(); } catch { /* ignore */ }
 
-  const lines = song.lyrics.filter((line) => line.text && line.text.trim());
+  const lines = rawLyrics.filter((line) => line.text && line.text.trim());
   const plainText = lines.map((line) => line.text).join("\n");
 
   const panel = el("section", { class: "gen-section lyric-export-panel" });

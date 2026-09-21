@@ -1,9 +1,10 @@
 import { api, mediaUrl } from "../api.js";
-import { fmtDuration, fmtAccount, el, clear, toast, channelColor } from "../util.js";
+import { fmtDuration, fmtAccount, getChannelDisplayName, el, clear, toast, channelColor } from "../util.js";
 import { renderTab, currentTab, setSong } from "../sidepanel.js?v=lyric-export1";
 import { attachHalftone } from "../components/halftone.js";
 import { applyDesignSettings } from "../tabs/design.js";
-import { loadPlayerSong, setPlayerContext, queueAutoplayForRoute, getAudio, playNextSong, playPrevSong, getUpcomingSongs, getPlaylistContext } from "../player.js?v=radio-longform1";
+import { loadPlayerSong, setPlayerContext, playSongNow, queueAutoplayForRoute, getAudio, playNextSong, playPrevSong, getUpcomingSongs, getPlaylistContext } from "../player.js?v=radio-longform1";
+import { card } from "./home.js";
 
 let currentAudio = null;
 let _related = [];
@@ -212,15 +213,16 @@ export async function renderWatch(songId) {
   _track = (song.gens || []).filter((g) => g.status === "completed" && g.file_path);
   _slideshowMode = loadSlideshowMode(song.id);
   _traySelected = new Set();
-  paintVisual(document.getElementById("visual"), song);
-  renderTrackStrip(song);
-  bindCanvasDrops(song);
-  initMediaTray(song);
   if (_watchAudioAbort) _watchAudioAbort.abort();
   _watchAudioAbort = new AbortController();
   const audioSignal = _watchAudioAbort.signal;
   const audio = loadPlayerSong(song);
   currentAudio = audio;
+
+  paintVisual(document.getElementById("visual"), song);
+  renderTrackStrip(song);
+  bindCanvasDrops(song);
+  initMediaTray(song);
 
   // Wire halftone visualizer to the audio element (idempotent across songs)
   const halftoneCanvas = document.getElementById("halftone");
@@ -249,7 +251,7 @@ export async function renderWatch(songId) {
   document.getElementById("song-title").textContent = song.title;
 
   const accountChip = document.getElementById("meta-account");
-  accountChip.textContent = fmtAccount(song.account);
+  accountChip.textContent = getChannelDisplayName(song.account);
   accountChip.href = `#/channel/${encodeURIComponent(song.account)}`;
 
   const verChip = document.getElementById("meta-version");
@@ -322,6 +324,9 @@ export async function renderWatch(songId) {
     upcoming = _related;
   }
   for (const r of upcoming) upNext.append(upRow(r));
+
+  // Related songs bottom panel
+  renderRelatedGrid(song);
 
   // Sidepanel
   setSong(song);
@@ -894,7 +899,7 @@ function upRow(r) {
   a.append(thumb);
   const info = el("div");
   info.append(el("div", { class: "info-title" }, r.title));
-  const sub = [fmtAccount(r.account)];
+  const sub = [getChannelDisplayName(r.account)];
   if (r.version > 1) sub.push(`v${r.version}`);
   if (r.duration) sub.push(fmtDuration(r.duration));
   info.append(el("div", { class: "info-sub" }, sub.join(" · ")));
@@ -917,7 +922,7 @@ function bindShortcuts(song) {
   if (_keyAbort) _keyAbort.abort();
   _keyAbort = new AbortController();
   const audio = currentAudio;
-  const TAB_NAMES = ["dj", "generate", "lyrics", "design", "sources", "prompts", "batch"];
+  const TAB_NAMES = ["generate", "lyrics", "design", "sources"];
 
   function focusedOnInput() {
     const t = document.activeElement;
@@ -943,7 +948,7 @@ function bindShortcuts(song) {
     } else if (k === "p") {
       e.preventDefault();
       playPrevSong();
-    } else if (k >= "1" && k <= "7") {
+    } else if (k >= "1" && k <= "4") {
       e.preventDefault();
       const idx = parseInt(k, 10) - 1;
       const tabName = TAB_NAMES[idx];
@@ -957,47 +962,6 @@ function bindShortcuts(song) {
 }
 
 function bindTransport(audio, song, signal) {
-  const playBtn = document.getElementById("tp-play");
-  const prevBtn = document.getElementById("tp-prev");
-  const nextBtn = document.getElementById("tp-next");
-  const scrub = document.getElementById("tp-scrub");
-  const muteBtn = document.getElementById("tp-mute");
-  const vol = document.getElementById("tp-vol");
-  const status = document.getElementById("lcd-status");
-  if (!playBtn || !scrub) return;
-
-  const refreshPlay = () => {
-    const playing = !audio.paused;
-    playBtn.textContent = playing ? "❚❚" : "▶";
-    if (status) status.textContent = playing ? "▶" : "❚❚";
-  };
-  playBtn.onclick = () => { audio.paused ? audio.play() : audio.pause(); };
-  audio.addEventListener("play", refreshPlay, { signal });
-  audio.addEventListener("pause", refreshPlay, { signal });
-  refreshPlay();
-
-  // Scrub bar — uses 0..1000 to keep granularity without bothering with float steps
-  let scrubbing = false;
-  const scrubFromAudio = () => {
-    if (scrubbing) return;
-    const total = audio.duration || song.duration || 0;
-    if (!total) return;
-    scrub.value = String(Math.round((audio.currentTime / total) * 1000));
-  };
-  audio.addEventListener("timeupdate", scrubFromAudio, { signal });
-  audio.addEventListener("loadedmetadata", scrubFromAudio, { signal });
-  scrub.addEventListener("input", () => {
-    scrubbing = true;
-    const total = audio.duration || song.duration || 0;
-    if (total) audio.currentTime = (Number(scrub.value) / 1000) * total;
-  });
-  scrub.addEventListener("change", () => { scrubbing = false; });
-
-  // Volume + mute
-  vol.value = String(Math.round(audio.volume * 100));
-  vol.oninput = () => { audio.volume = Number(vol.value) / 100; if (audio.volume > 0) audio.muted = false; };
-  muteBtn.onclick = () => { audio.muted = !audio.muted; muteBtn.textContent = audio.muted ? "🔇" : "🔊"; };
-
   // Synchronize any active stage video with the global audio playback
   const syncVisualVideo = () => {
     const v = document.querySelector("#visual video");
@@ -1006,7 +970,11 @@ function bindTransport(audio, song, signal) {
       v.pause();
     } else {
       if (Math.abs(v.currentTime - audio.currentTime) > 0.35) {
-        v.currentTime = audio.currentTime;
+        try {
+          if (audio.currentTime < (v.duration || Infinity)) {
+            v.currentTime = audio.currentTime;
+          }
+        } catch {}
       }
       v.play().catch(() => {});
     }
@@ -1015,17 +983,71 @@ function bindTransport(audio, song, signal) {
   audio.addEventListener("pause", syncVisualVideo, { signal });
   audio.addEventListener("seeked", () => {
     const v = document.querySelector("#visual video");
-    if (v) v.currentTime = audio.currentTime;
+    if (v) {
+      try {
+        if (audio.currentTime < (v.duration || Infinity)) {
+          v.currentTime = audio.currentTime;
+        }
+      } catch {}
+    }
   }, { signal });
   audio.addEventListener("timeupdate", () => {
     const v = document.querySelector("#visual video");
     if (v && !audio.paused && Math.abs(v.currentTime - audio.currentTime) > 0.4) {
-      v.currentTime = audio.currentTime;
+      try {
+        if (audio.currentTime < (v.duration || Infinity)) {
+          v.currentTime = audio.currentTime;
+        }
+      } catch {}
     }
   }, { signal });
 
-  prevBtn.onclick = () => playPrevSong();
-  nextBtn.onclick = () => playNextSong();
+  const playBtn = document.getElementById("tp-play");
+  const prevBtn = document.getElementById("tp-prev");
+  const nextBtn = document.getElementById("tp-next");
+  const scrub = document.getElementById("tp-scrub");
+  const muteBtn = document.getElementById("tp-mute");
+  const vol = document.getElementById("tp-vol");
+  const status = document.getElementById("lcd-status");
+
+  if (playBtn) {
+    const refreshPlay = () => {
+      const playing = !audio.paused;
+      playBtn.textContent = playing ? "❚❚" : "▶";
+      if (status) status.textContent = playing ? "▶" : "❚❚";
+    };
+    playBtn.onclick = () => { audio.paused ? audio.play() : audio.pause(); };
+    audio.addEventListener("play", refreshPlay, { signal });
+    audio.addEventListener("pause", refreshPlay, { signal });
+    refreshPlay();
+  }
+
+  if (scrub) {
+    let scrubbing = false;
+    const scrubFromAudio = () => {
+      if (scrubbing) return;
+      const total = audio.duration || song.duration || 0;
+      if (!total) return;
+      scrub.value = String(Math.round((audio.currentTime / total) * 1000));
+    };
+    audio.addEventListener("timeupdate", scrubFromAudio, { signal });
+    audio.addEventListener("loadedmetadata", scrubFromAudio, { signal });
+    scrub.addEventListener("input", () => {
+      scrubbing = true;
+      const total = audio.duration || song.duration || 0;
+      if (total) audio.currentTime = (Number(scrub.value) / 1000) * total;
+    });
+    scrub.addEventListener("change", () => { scrubbing = false; });
+  }
+
+  if (vol && muteBtn) {
+    vol.value = String(Math.round(audio.volume * 100));
+    vol.oninput = () => { audio.volume = Number(vol.value) / 100; if (audio.volume > 0) audio.muted = false; };
+    muteBtn.onclick = () => { audio.muted = !audio.muted; muteBtn.textContent = audio.muted ? "🔇" : "🔊"; };
+  }
+
+  if (prevBtn) prevBtn.onclick = () => playPrevSong();
+  if (nextBtn) nextBtn.onclick = () => playNextSong();
 }
 
 let _preferArtMode = false;
@@ -1181,43 +1203,79 @@ function paintVisual(visual, song) {
   }
 
   const hasVideo = Boolean(song.video_path || song.video_only);
+  const hasCover = Boolean(song.jpg_path || song.video_path || song.video_only);
+
   if (hasVideo && !_preferArtMode) {
     visual.classList.add("with-art", "full-art");
     const vUrl = mediaUrl.video(song.id);
     const bg = el("div", { class: "blur-bg" });
-    if (song.jpg_path) bg.style.backgroundImage = `url(${mediaUrl.cover(song.id)})`;
+    if (hasCover) bg.style.backgroundImage = `url(${mediaUrl.cover(song.id)})`;
     visual.append(bg);
 
     const wrap = el("div", { class: "center-art" });
     const audio = getCurrentAudio();
     const vid = el("video", {
       src: vUrl,
-      autoplay: audio && !audio.paused,
+      autoplay: Boolean(audio && !audio.paused),
       muted: true,
       loop: true,
       playsinline: true,
     });
-    if (audio && !audio.paused && audio.currentTime) {
-      vid.currentTime = audio.currentTime;
-      vid.play().catch(() => {});
-    }
+
+    vid.onerror = (e) => {
+      console.warn("Stage video playback error, falling back to cover:", e);
+      wrap.innerHTML = "";
+      if (hasCover) {
+        const coverImg = el("img", { src: mediaUrl.cover(song.id), alt: song.title || "" });
+        coverImg.onerror = () => {
+          const c = channelColor(song.account);
+          visual.style.background = `linear-gradient(150deg, ${c}3 0%, ${c}9 100%)`;
+        };
+        wrap.append(coverImg);
+      } else {
+        const c = channelColor(song.account);
+        visual.style.background = `linear-gradient(150deg, ${c}3 0%, ${c}9 100%)`;
+      }
+    };
+
+    const syncTime = () => {
+      try {
+        if (audio && !audio.paused && audio.currentTime > 0) {
+          if (audio.currentTime < (vid.duration || Infinity)) {
+            vid.currentTime = audio.currentTime;
+          }
+          vid.play().catch(() => {});
+        }
+      } catch {}
+    };
+
+    if (vid.readyState >= 1) syncTime();
+    else vid.addEventListener("loadedmetadata", syncTime, { once: true });
+
     wrap.append(vid);
     visual.append(wrap);
     return;
   }
 
-  if (song.jpg_path) {
+  if (hasCover) {
     visual.classList.add("with-art");
     const url = mediaUrl.cover(song.id);
     const bg = el("div", { class: "blur-bg" });
     bg.style.backgroundImage = `url(${url})`;
     const wrap = el("div", { class: "center-art" });
-    const coverImg = el("img", { src: url, alt: "" });
+    const coverImg = el("img", { src: url, alt: song.title || "" });
     coverImg.addEventListener("load", () => {
       if (coverImg.naturalWidth && coverImg.naturalWidth < 200) {
         coverImg.classList.add("lowres");
       }
     }, { once: true });
+    coverImg.onerror = () => {
+      console.warn("Stage cover image failed, falling back to gradient");
+      const c = channelColor(song.account);
+      visual.style.background = `linear-gradient(150deg, ${c}3 0%, ${c}9 100%)`;
+      coverImg.remove();
+      bg.remove();
+    };
     wrap.append(coverImg);
     visual.append(bg, wrap);
   } else {
@@ -1225,5 +1283,49 @@ function paintVisual(visual, song) {
     visual.style.background = `linear-gradient(150deg, ${c}3 0%, ${c}9 100%)`;
   }
 }
+
+async function renderRelatedGrid(song) {
+  const gridEl = document.getElementById("related-songs-grid");
+  const countEl = document.getElementById("related-panel-count");
+  const playAllBtn = document.getElementById("btn-related-play-all");
+  if (!gridEl) return;
+
+  clear(gridEl);
+  if (countEl) countEl.textContent = "Loading...";
+
+  let related = [];
+  try {
+    related = await api.related(song.id, 36);
+  } catch {
+    related = [];
+  }
+
+  if (countEl) countEl.textContent = `(${related.length})`;
+
+  if (!related || related.length === 0) {
+    gridEl.append(
+      el(
+        "div",
+        { class: "empty-state", style: "grid-column: 1 / -1; padding: 24px; text-align: center;" },
+        "No related songs found for this track."
+      )
+    );
+    if (playAllBtn) playAllBtn.disabled = true;
+    return;
+  }
+
+  if (playAllBtn) {
+    playAllBtn.disabled = false;
+    playAllBtn.onclick = () => {
+      setPlaylistContext({ playlist: related, song: related[0], contextName: "Related Songs" });
+      playSongNow(related[0]);
+    };
+  }
+
+  for (const item of related) {
+    gridEl.append(card(item, () => related, null, "Related Songs"));
+  }
+}
+
 
 export function getCurrentAudio() { return currentAudio || getAudio(); }

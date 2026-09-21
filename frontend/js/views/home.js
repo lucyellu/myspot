@@ -1,6 +1,7 @@
 import { api, mediaUrl } from "../api.js";
-import { fmtDuration, fmtAccount, channelColor, el, clear } from "../util.js";
+import { fmtDuration, fmtAccount, fmtMonthYear, getChannelDisplayName, channelColor, el, clear, toast } from "../util.js";
 import { playSongNow, setPlaylistContext, appendPlaylistSongs } from "../player.js";
+import { attachCardGestures } from "../components/card-gestures.js";
 
 const PAGE = 60;
 
@@ -15,22 +16,28 @@ function saveHomePrefs(p) {
   try { localStorage.setItem(STORE_KEY, JSON.stringify(p)); } catch { /* ignore */ }
 }
 
-export async function renderHome({ account = null, q = null, tag = null, has_video = false } = {}) {
+export async function renderHome({ account = null, q = null, tag = null, has_video = false, playlist_id = null } = {}) {
   const view = document.getElementById("view");
   clear(view);
   const tpl = document.getElementById("tpl-home").content.cloneNode(true);
   view.append(tpl);
 
   let videoOnly = Boolean(has_video);
+  let playlistInfo = null;
+  if (playlist_id) {
+    try { playlistInfo = await api.playlist(playlist_id); } catch {}
+  }
+
   const titleEl = document.getElementById("home-title");
   const updateTitle = () => {
     let base = "ALL CHANNELS";
-    if (q) base = `Search: ${q}`;
+    if (playlistInfo) base = `📁 ${playlistInfo.name.toUpperCase()}`;
+    else if (q) base = `Search: ${q}`;
     else if (tag) base = `🎤 ${tag.toUpperCase()}`;
-    else if (account) base = fmtAccount(account).toUpperCase();
+    else if (account) base = getChannelDisplayName(account).toUpperCase();
     else if (videoOnly && !account && !q && !tag) base = "VIDEOS 🎬";
 
-    if (videoOnly && (account || q || tag)) {
+    if (videoOnly && (account || q || tag || playlistInfo)) {
       titleEl.textContent = `${base} · VIDEOS 🎬`;
     } else {
       titleEl.textContent = base;
@@ -55,6 +62,27 @@ export async function renderHome({ account = null, q = null, tag = null, has_vid
       contextName = updateTitle();
       loadPage(true);
     };
+  }
+
+  // If viewing a playlist, add a "Play All" button and manage options
+  if (playlistInfo) {
+    const homeControls = view.querySelector(".home-controls");
+    if (homeControls) {
+      const playAllBtn = el("button", {
+        class: "btn primary playlist-play-all-btn",
+        type: "button",
+        title: "Play all songs in this playlist",
+      }, "▶ PLAY ALL");
+      playAllBtn.onclick = () => {
+        if (loadedSongs.length) {
+          setPlaylistContext({ playlist: loadedSongs, song: loadedSongs[0], contextName });
+          playSongNow(loadedSongs[0]);
+        } else {
+          toast("Playlist is empty");
+        }
+      };
+      homeControls.prepend(playAllBtn);
+    }
   }
 
   // Hydrate size + view-mode + sort from localStorage
@@ -97,18 +125,25 @@ export async function renderHome({ account = null, q = null, tag = null, has_vid
   let offset = 0;
   let total = 0;
   let loadedSongs = [];
+  let lastTimelineKey = null;
 
   const dirBtn = document.getElementById("btn-sort-dir");
   const updateDirBtn = () => { dirBtn.textContent = dir === "desc" ? "↓" : "↑"; };
   dirBtn.onclick = () => { dir = dir === "desc" ? "asc" : "desc"; updateDirBtn(); loadPage(true); };
 
   async function loadPage(reset = false) {
-    if (reset) { clear(grid); offset = 0; loadedSongs = []; }
+    if (reset) {
+      clear(grid);
+      offset = 0;
+      loadedSongs = [];
+      lastTimelineKey = null;
+    }
     status.textContent = "Loading...";
     const data = await api.songs({
       account,
       q,
       tag,
+      playlist_id,
       has_video: videoOnly ? true : null,
       limit: PAGE,
       offset,
@@ -116,11 +151,22 @@ export async function renderHome({ account = null, q = null, tag = null, has_vid
       dir,
     });
     total = data.total;
-    const query = { account, q, tag, has_video: videoOnly ? true : null, sort, dir, total };
+    const query = { account, q, tag, playlist_id, has_video: videoOnly ? true : null, sort, dir, total };
 
     for (const s of data.items) {
       loadedSongs.push(s);
-      grid.append(card(s, () => loadedSongs, query, contextName));
+
+      // In timeline-ordered sorts, insert Month/Year section markers
+      if (sort === "recent" || sort === "recent_played") {
+        const rawDate = sort === "recent" ? s.suno_date : (s.last_played_at || s.suno_date);
+        const markerKey = fmtMonthYear(rawDate) || "Older / Undated";
+        if (markerKey !== lastTimelineKey) {
+          lastTimelineKey = markerKey;
+          grid.append(timelineMarker(markerKey));
+        }
+      }
+
+      grid.append(card(s, () => loadedSongs, query, contextName, { playlist_id }));
     }
     offset += data.items.length;
     appendPlaylistSongs(data.items, { total });
@@ -142,7 +188,7 @@ export async function renderHome({ account = null, q = null, tag = null, has_vid
 
   // Add a "RECENT ASSETS" strip at the bottom of the home view so users can
   // navigate songs + assets in one place.
-  if (!q && !account && !videoOnly) {
+  if (!q && !account && !videoOnly && !playlist_id) {
     await renderAssetsStrip(view);
   }
 }
@@ -170,7 +216,7 @@ async function renderAssetsStrip(view) {
   view.append(wrap);
 }
 
-export function card(s, getPlaylist = null, query = null, contextName = "") {
+export function card(s, getPlaylist = null, query = null, contextName = "", { playlist_id = null } = {}) {
   const tpl = document.getElementById("tpl-card").content.cloneNode(true);
   const article = tpl.querySelector(".card");
   const thumb = article.querySelector(".thumb");
@@ -194,7 +240,7 @@ export function card(s, getPlaylist = null, query = null, contextName = "") {
   const c = channelColor(s.account);
   thumb.style.background = `linear-gradient(150deg, ${c}3 0%, ${c}9 100%)`;
 
-  const hasImage = Boolean(s.jpg_path || s.video_only);
+  const hasImage = Boolean(s.jpg_path || s.video_path || s.video_only || s.has_video);
   if (hasImage) {
     img.style.display = "";
     img.src = mediaUrl.cover(s.id);
@@ -228,6 +274,27 @@ export function card(s, getPlaylist = null, query = null, contextName = "") {
     playSongNow(s);
   };
   thumb.append(quick);
+
+  if (playlist_id) {
+    const rmBtn = el("button", {
+      class: "card-remove-playlist-btn",
+      type: "button",
+      title: "Remove from this playlist",
+      "aria-label": "Remove from playlist",
+    }, "×");
+    rmBtn.onclick = async (e) => {
+      e.preventDefault();
+      e.stopPropagation();
+      try {
+        await api.removePlaylistSong(playlist_id, s.id);
+        article.remove();
+        toast(`Removed "${s.title}" from playlist`);
+        document.dispatchEvent(new CustomEvent("myspot:playlistschange"));
+      } catch (err) { toast("Failed: " + err.message); }
+    };
+    thumb.append(rmBtn);
+  }
+
   if (s.version > 1) verBadge.textContent = `v${s.version}`; else verBadge.remove();
   durBadge.textContent = fmtDuration(s.duration);
   titleEl.textContent = s.title;
@@ -261,5 +328,20 @@ export function card(s, getPlaylist = null, query = null, contextName = "") {
     }
   }
 
+  // Attach swipe left / right / down gestures to this song card
+  attachCardGestures(article, s);
+
   return article;
 }
+
+function timelineMarker(label) {
+  const marker = el("div", { class: "timeline-marker", "data-timeline": label });
+  const content = el("div", { class: "timeline-marker-content" });
+  content.append(
+    el("span", { class: "timeline-marker-icon" }, "📅"),
+    el("span", { class: "timeline-marker-label" }, label)
+  );
+  marker.append(content, el("div", { class: "timeline-marker-line" }));
+  return marker;
+}
+

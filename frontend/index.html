@@ -8,7 +8,7 @@
 <link rel="preconnect" href="https://fonts.googleapis.com" />
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
 <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=VT323&family=Pixelify+Sans:wght@400;500;600;700&family=Inter:wght@400;500;600;700&family=Roboto:wght@400;700&family=Bebas+Neue&family=Playfair+Display:wght@400;700&family=Space+Grotesk:wght@400;700&family=Nunito:wght@400;700&family=Dancing+Script:wght@700&display=swap" />
-<link rel="stylesheet" href="/static/css/app.css?v=morph1" />
+<link rel="stylesheet" href="/static/css/app.css?v=timeline1" />
 <!-- Runtime config: sets window.MYSPOT_API_BASE for static deploys. Optional;
      missing file is fine (same-origin fallback). -->
 <script src="/static/config.js" onerror="this.remove()"></script>
@@ -110,6 +110,14 @@
     <summary><span class="drawer-section-h">CHANNELS</span><span class="drawer-section-n" id="drawer-channels-n"></span></summary>
     <div id="channel-list" class="channel-list"></div>
   </details>
+  <details class="drawer-section" id="drawer-playlists" open>
+    <summary>
+      <span class="drawer-section-h">PLAYLISTS</span>
+      <span class="drawer-section-n" id="drawer-playlists-n"></span>
+      <button type="button" class="drawer-add-btn" id="btn-create-playlist" title="Create playlist">+</button>
+    </summary>
+    <div id="playlist-list" class="channel-list"></div>
+  </details>
   <details class="drawer-section" id="drawer-smart">
     <summary><span class="drawer-section-h">SMART</span><span class="drawer-section-n" id="drawer-smart-n"></span></summary>
     <div class="channel-list">
@@ -183,96 +191,107 @@
 </template>
 
 <template id="tpl-watch">
-  <section class="watch" id="watch-lanes">
-    <section class="watch-lane lane-stage" data-lane="stage" draggable="true">
-      <div class="lane-head">
-        <button class="lane-collapse" type="button" title="Collapse stage">−</button>
-        <span class="lane-title">STAGE</span>
-        <span class="lane-hint">player · lyrics · track</span>
-        <button class="lane-mode-btn" id="tp-aspect" type="button" title="Toggle aspect ratio: 16:9 Landscape / 9:16 Portrait / 1:1 Square">16:9</button>
-        <button class="lane-mode-btn" id="tp-video-toggle" type="button" title="Toggle video / cover art" hidden>VIDEO</button>
-        <button class="lane-mode-btn on" id="tp-karaoke" type="button" title="Karaoke lyric overlay">KARAOKE</button>
-      </div>
-      <div class="lane-body watch-main">
-        <div class="player">
-          <div class="player-stage">
-            <div class="visual" id="visual"></div>
-            <canvas id="halftone" class="halftone-overlay"></canvas>
-            <div class="drop-overlay" id="drop-overlay">DROP TO ADD TO TRACK</div>
-            <div class="lyric-overlay" id="lyric-overlay" hidden></div>
-          </div>
+  <div class="watch-page-container">
+    <section class="watch" id="watch-lanes">
+      <section class="watch-lane lane-stage" data-lane="stage" draggable="true">
+        <div class="lane-head">
+          <button class="lane-collapse" type="button" title="Collapse stage">−</button>
+          <span class="lane-title">STAGE</span>
+          <span class="lane-hint">player · lyrics · track</span>
+          <button class="lane-mode-btn" id="tp-aspect" type="button" title="Toggle aspect ratio: 16:9 Landscape / 9:16 Portrait / 1:1 Square">16:9</button>
+          <button class="lane-mode-btn" id="tp-video-toggle" type="button" title="Toggle video / cover art" hidden>VIDEO</button>
+          <button class="lane-mode-btn on" id="tp-karaoke" type="button" title="Karaoke lyric overlay">KARAOKE</button>
         </div>
-        <div class="lyric-strip-host" id="lyric-strip-host"></div>
-        <div class="track-strip" id="track-strip">
-          <div class="track-empty">DROP IMAGES / VIDEOS / ASSETS HERE TO BUILD YOUR TRACK</div>
-        </div>
-        <div class="meta">
-          <h1 id="song-title"></h1>
-          <div class="meta-row">
-            <a class="chip" id="meta-account"></a>
-            <span class="chip ver" id="meta-version" hidden></span>
-            <span class="chip" id="meta-duration"></span>
-            <span class="chip" id="meta-bpm" hidden></span>
-            <span class="chip" id="meta-date" hidden></span>
-            <a class="chip chip-suno" id="meta-suno" target="_blank" title="Open song on Suno" hidden>🎵 SUNO ↗</a>
-            <button class="chip-btn" id="btn-like" type="button" title="Like (1 to toggle)">♡</button>
-          </div>
-          <div class="genre" id="meta-genre"></div>
-        </div>
-      </div>
-    </section>
-    <div class="lane-resizer" data-resize-before="stage" data-resize-after="media" title="Resize lanes"></div>
-    <section class="watch-lane lane-media" data-lane="media" draggable="true">
-      <div class="lane-head">
-        <button class="lane-collapse" type="button" title="Collapse media">−</button>
-        <span class="lane-title">MEDIA</span>
-        <select id="media-tray-folder" class="media-tray-folder" title="Media folder"></select>
-        <span class="media-tray-path lane-hint" id="media-tray-path"></span>
-      </div>
-      <div class="lane-body shelves">
-        <div class="shelf" id="media-tray">
-          <div class="media-tray-body">
-            <div id="tray-bulk-bar" class="tray-bulk-bar" hidden>
-              <span class="tray-bulk-count"></span>
-              <button class="btn" type="button" id="tray-bulk-attach">Attach selected to song</button>
-              <button class="btn" type="button" id="tray-bulk-clear">Clear</button>
-            </div>
-            <div class="media-tray-grid" id="media-tray-grid"></div>
-            <div class="media-tray-footer">
-              <button class="btn" id="media-tray-more" type="button">LOAD MORE</button>
-              <span class="muted small" id="media-tray-status"></span>
+        <div class="lane-body watch-main">
+          <div class="player">
+            <div class="player-stage">
+              <div class="visual" id="visual"></div>
+              <canvas id="halftone" class="halftone-overlay"></canvas>
+              <div class="drop-overlay" id="drop-overlay">DROP TO ADD TO TRACK</div>
+              <div class="lyric-overlay" id="lyric-overlay" hidden></div>
             </div>
           </div>
-        </div>
-        <div class="shelf shelf-songs">
-          <div class="shelf-head"><span class="shelf-title">UP NEXT</span></div>
-          <div class="up-next" id="up-next"></div>
-        </div>
-      </div>
-    </section>
-    <div class="lane-resizer" data-resize-before="media" data-resize-after="studio" title="Resize lanes"></div>
-    <aside class="watch-lane lane-studio sidepanel" data-lane="studio" draggable="true">
-      <div class="lane-head">
-        <button class="lane-collapse" type="button" title="Collapse studio">−</button>
-        <span class="lane-title">STUDIO</span>
-        <span class="lane-hint">generate · lyrics · design</span>
-      </div>
-      <div class="lane-body">
-        <nav class="tabs fm-dial" id="tabs">
-          <div class="fm-tick">
-            <button data-tab="dj"><span class="fm-freq" data-count="dj">ON</span><span class="fm-name">DJ</span></button>
-            <button data-tab="generate" class="active"><span class="fm-freq" data-count="generate">0</span><span class="fm-name">GENERATE</span></button>
-            <button data-tab="lyrics"><span class="fm-freq" data-count="lyrics">0</span><span class="fm-name">LYRICS</span></button>
-            <button data-tab="design"><span class="fm-freq" data-count="design">·</span><span class="fm-name">DESIGN</span></button>
-            <button data-tab="sources"><span class="fm-freq" data-count="sources">0</span><span class="fm-name">SOURCES</span></button>
-            <button data-tab="prompts"><span class="fm-freq" data-count="prompts">0</span><span class="fm-name">PROMPTS</span></button>
-            <button data-tab="batch"><span class="fm-freq" data-count="batch">0</span><span class="fm-name">BATCH</span></button>
+          <div class="lyric-strip-host" id="lyric-strip-host"></div>
+          <div class="track-strip" id="track-strip">
+            <div class="track-empty">DROP IMAGES / VIDEOS / ASSETS HERE TO BUILD YOUR TRACK</div>
           </div>
-        </nav>
-        <div class="tab-body" id="tab-body"></div>
+          <div class="meta">
+            <h1 id="song-title"></h1>
+            <div class="meta-row">
+              <a class="chip" id="meta-account"></a>
+              <span class="chip ver" id="meta-version" hidden></span>
+              <span class="chip" id="meta-duration"></span>
+              <span class="chip" id="meta-bpm" hidden></span>
+              <span class="chip" id="meta-date" hidden></span>
+              <a class="chip chip-suno" id="meta-suno" target="_blank" title="Open song on Suno" hidden>🎵 SUNO ↗</a>
+              <button class="chip-btn" id="btn-like" type="button" title="Like (1 to toggle)">♡</button>
+            </div>
+            <div class="genre" id="meta-genre"></div>
+          </div>
+        </div>
+      </section>
+      <div class="lane-resizer" data-resize-before="stage" data-resize-after="media" title="Resize lanes"></div>
+      <section class="watch-lane lane-media" data-lane="media" draggable="true">
+        <div class="lane-head">
+          <button class="lane-collapse" type="button" title="Collapse media">−</button>
+          <span class="lane-title">MEDIA</span>
+          <select id="media-tray-folder" class="media-tray-folder" title="Media folder"></select>
+          <span class="media-tray-path lane-hint" id="media-tray-path"></span>
+        </div>
+        <div class="lane-body shelves">
+          <div class="shelf" id="media-tray">
+            <div class="media-tray-body">
+              <div id="tray-bulk-bar" class="tray-bulk-bar" hidden>
+                <span class="tray-bulk-count"></span>
+                <button class="btn" type="button" id="tray-bulk-attach">Attach selected to song</button>
+                <button class="btn" type="button" id="tray-bulk-clear">Clear</button>
+              </div>
+              <div class="media-tray-grid" id="media-tray-grid"></div>
+              <div class="media-tray-footer">
+                <button class="btn" id="media-tray-more" type="button">LOAD MORE</button>
+                <span class="muted small" id="media-tray-status"></span>
+              </div>
+            </div>
+          </div>
+          <div class="shelf shelf-songs">
+            <div class="shelf-head"><span class="shelf-title">UP NEXT</span></div>
+            <div class="up-next" id="up-next"></div>
+          </div>
+        </div>
+      </section>
+      <div class="lane-resizer" data-resize-before="media" data-resize-after="studio" title="Resize lanes"></div>
+      <aside class="watch-lane lane-studio sidepanel" data-lane="studio" draggable="true">
+        <div class="lane-head">
+          <button class="lane-collapse" type="button" title="Collapse studio">−</button>
+          <span class="lane-title">STUDIO</span>
+          <span class="lane-hint">generate · lyrics · design</span>
+        </div>
+        <div class="lane-body">
+          <nav class="tabs fm-dial" id="tabs">
+            <div class="fm-tick">
+              <button data-tab="generate" class="active"><span class="fm-freq" data-count="generate">0</span><span class="fm-name">GENERATE</span></button>
+              <button data-tab="lyrics"><span class="fm-freq" data-count="lyrics">0</span><span class="fm-name">LYRICS</span></button>
+              <button data-tab="design"><span class="fm-freq" data-count="design">·</span><span class="fm-name">DESIGN</span></button>
+              <button data-tab="sources"><span class="fm-freq" data-count="sources">0</span><span class="fm-name">SOURCES</span></button>
+            </div>
+          </nav>
+          <div class="tab-body" id="tab-body"></div>
+        </div>
+      </aside>
+    </section>
+    <section class="watch-related-panel" id="watch-related-panel">
+      <div class="related-panel-head">
+        <div class="related-panel-title-wrap">
+          <span class="related-panel-title">RELATED SONGS</span>
+          <span class="related-panel-count muted small" id="related-panel-count"></span>
+        </div>
+        <div class="related-panel-actions">
+          <button class="btn compact" id="btn-related-play-all" type="button" title="Play all related songs in sequence">▶ PLAY ALL</button>
+        </div>
       </div>
-    </aside>
-  </section>
+      <div class="related-songs-grid grid" id="related-songs-grid"></div>
+    </section>
+  </div>
 </template>
 
 <template id="tpl-card">
@@ -302,6 +321,9 @@
       <tr><td><kbd>M</kbd></td><td>mute</td></tr>
       <tr><td><kbd>N</kbd></td><td>next</td></tr>
       <tr><td><kbd>P</kbd></td><td>previous</td></tr>
+      <tr><td><kbd>Swipe ⬅</kbd></td><td>Add to play queue</td></tr>
+      <tr><td><kbd>Swipe ➡</kbd></td><td>Add to recent playlist</td></tr>
+      <tr><td><kbd>Swipe ⬇</kbd></td><td>Choose playlist</td></tr>
       <tr><td><kbd>1</kbd>-<kbd>7</kbd></td><td>switch tab</td></tr>
       <tr><td><kbd>/</kbd></td><td>focus search</td></tr>
       <tr><td><kbd>?</kbd></td><td>this help</td></tr>
@@ -311,6 +333,6 @@
   </div>
 </div>
 
-<script type="module" src="/static/js/main.js?v=morph1"></script>
+<script type="module" src="/static/js/main.js?v=radio-247-live1"></script>
 </body>
 </html>

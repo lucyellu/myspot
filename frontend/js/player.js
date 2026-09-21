@@ -1,5 +1,5 @@
 import { api, mediaUrl } from "./api.js";
-import { fmtDuration, fmtAccount, toast } from "./util.js";
+import { fmtDuration, fmtAccount, getChannelDisplayName, toast } from "./util.js";
 
 const SESSION_KEY = "myspot.playlist.v2";
 
@@ -104,7 +104,7 @@ function updateMediaSession() {
   const artwork = _song.jpg_path ? [{ src: mediaUrl.cover(_song.id), sizes: "512x512", type: "image/jpeg" }] : [];
   navigator.mediaSession.metadata = new MediaMetadata({
     title: _song.title || "Untitled",
-    artist: fmtAccount(_song.account),
+    artist: getChannelDisplayName(_song.account),
     album: _contextName || "myspot",
     artwork,
   });
@@ -117,7 +117,7 @@ function renderMini() {
   showMini(true);
   p.title.textContent = _song.title || "Untitled";
   p.title.href = `#/song/${_song.id}`;
-  p.meta.textContent = [fmtAccount(_song.account), _song.genre].filter(Boolean).join(" · ");
+  p.meta.textContent = [getChannelDisplayName(_song.account), _song.genre].filter(Boolean).join(" · ");
   if (_song.jpg_path) {
     p.art.style.backgroundImage = `url(${mediaUrl.cover(_song.id)})`;
     p.art.textContent = "";
@@ -266,7 +266,15 @@ export function initPersistentPlayer() {
 
   p.play.onclick = () => {
     if (!_song) return;
-    audio.paused ? audio.play().catch((e) => toast("Play failed: " + e.message)) : audio.pause();
+    if (audio.paused) {
+      audio.play().catch((e) => {
+        if (e.name !== "NotAllowedError") {
+          toast("Play failed: " + e.message);
+        }
+      });
+    } else {
+      audio.pause();
+    }
   };
   p.stop.onclick = () => {
     audio.pause();
@@ -301,11 +309,25 @@ export function initPersistentPlayer() {
     if (_song) location.hash = `#/song/${_song.id}`;
   };
 
-  audio.addEventListener("play", renderMini);
+  let _lastRecordedSongId = null;
+  audio.addEventListener("play", () => {
+    renderMini();
+    if (_song?.id && _lastRecordedSongId !== _song.id) {
+      _lastRecordedSongId = _song.id;
+      api.recordPlay(_song.id).catch(() => {});
+    }
+  });
   audio.addEventListener("pause", renderMini);
   audio.addEventListener("volumechange", renderMini);
-  audio.addEventListener("loadedmetadata", updateProgress);
+  audio.addEventListener("loadedmetadata", () => {
+    _lastRecordedSongId = null;
+    updateProgress();
+  });
   audio.addEventListener("timeupdate", updateProgress);
+  audio.addEventListener("error", (e) => {
+    console.warn("Audio element error:", audio.error, e);
+    renderMini();
+  });
   audio.addEventListener("ended", () => {
     playNextSong({ autoplay: true });
   });
@@ -379,7 +401,13 @@ export function loadPlayerSong(song, { autoplay = false, preserveQueue = false }
   renderMini();
   const shouldAutoplay = autoplay || _routeAutoplay || (wasPlaying && !sameSong);
   _routeAutoplay = false;
-  if (shouldAutoplay) audio.play().catch((e) => toast("Play failed: " + e.message));
+  if (shouldAutoplay) {
+    audio.play().catch((e) => {
+      if (e.name !== "NotAllowedError") {
+        console.warn("Autoplay deferred:", e);
+      }
+    });
+  }
   return audio;
 }
 
@@ -400,6 +428,40 @@ export function playQueuedSong(song, { related = [], sources = [], playlist = nu
   return audio;
 }
 
+export function enqueueSong(song, { next = true, silent = false } = {}) {
+  if (!song) return;
+  if (!_playlist || _playlist.length === 0) {
+    _playlist = [song];
+    _playlistIndex = 0;
+    savePersistedPlaylist();
+    if (!silent) toast(`Added "${song.title || "Track"}" to play queue`);
+    return;
+  }
+
+  const existingIdx = _playlist.findIndex((s) => s.id === song.id);
+  if (existingIdx === _playlistIndex) {
+    if (!silent) toast(`"${song.title || "Track"}" is currently playing`);
+    return;
+  }
+  if (existingIdx >= 0) {
+    _playlist.splice(existingIdx, 1);
+    if (existingIdx < _playlistIndex) {
+      _playlistIndex = Math.max(0, _playlistIndex - 1);
+    }
+  }
+
+  if (next) {
+    const insertIdx = Math.min(_playlist.length, Math.max(0, _playlistIndex + 1));
+    _playlist.splice(insertIdx, 0, song);
+  } else {
+    _playlist.push(song);
+  }
+
+  savePersistedPlaylist();
+  document.dispatchEvent(new CustomEvent("myspot:queuechange", { detail: { playlist: _playlist, index: _playlistIndex } }));
+  if (!silent) toast(`Enqueued "${song.title || "Track"}" ${next ? "to play next" : "to play queue"}`);
+}
+
 export function stopAndClear() {
   const audio = ensureAudio();
   audio.pause();
@@ -417,3 +479,4 @@ export function stopAndClear() {
 export function getAudio() {
   return ensureAudio();
 }
+

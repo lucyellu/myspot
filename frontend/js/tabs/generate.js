@@ -1,6 +1,8 @@
 import { api, mediaUrl } from "../api.js";
 import { el, clear, toast } from "../util.js";
 import { refreshPlayerVisual } from "../views/watch.js";
+import { renderPrompts } from "./prompts.js";
+import { renderQueue } from "./queue.js";
 
 // Default order: free options first (Gemini text 250/day, Pollinations unlimited).
 const PROMPT_MODELS = [
@@ -37,12 +39,63 @@ const ASPECTS = [
   { id: "landscape", label: "16:9", title: "Landscape" },
 ];
 
+let _activeGenSubtab = "visual";
+
 export async function renderGenerate(body, song) {
   clear(body);
   const state = stateFor(song);
 
   let health = { tools: {}, ffmpeg: false };
   try { health = await api.health(); } catch { /* ignore */ }
+
+  const subnav = el("div", { class: "gen-subnav" });
+  const btnVisual = el("button", { type: "button", class: "gen-subnav-btn" + (_activeGenSubtab === "visual" ? " active" : ""), "data-sub": "visual" }, "🎨 Visual");
+  const btnPrompts = el("button", { type: "button", class: "gen-subnav-btn" + (_activeGenSubtab === "prompts" ? " active" : ""), "data-sub": "prompts" }, "📜 Prompts");
+  const btnBatch = el("button", { type: "button", class: "gen-subnav-btn" + (_activeGenSubtab === "batch" ? " active" : ""), "data-sub": "batch" }, "⚡ Batch");
+  subnav.append(btnVisual, btnPrompts, btnBatch);
+  body.append(subnav);
+
+  const subBody = el("div", { class: "gen-sub-body" });
+  body.append(subBody);
+
+  const switchSub = (tab) => {
+    if (typeof subBody._cleanup === "function") {
+      try { subBody._cleanup(); } catch { /* ignore */ }
+      subBody._cleanup = null;
+    }
+    _activeGenSubtab = tab;
+    subnav.querySelectorAll(".gen-subnav-btn").forEach((b) => {
+      b.classList.toggle("active", b.dataset.sub === tab);
+    });
+    clear(subBody);
+    if (tab === "visual") {
+      renderVisual(subBody, song, state, health);
+    } else if (tab === "prompts") {
+      renderPrompts(subBody, song, {
+        onApply: (appliedText) => {
+          state.imagePromptValue = appliedText;
+          state.promptValue = appliedText;
+          switchSub("visual");
+          const inp = subBody.querySelector("#gen-prompt-input");
+          if (inp) {
+            inp.value = appliedText;
+            inp.focus();
+          }
+        }
+      });
+    } else if (tab === "batch") {
+      renderQueue(subBody, song);
+    }
+  };
+
+  btnVisual.onclick = () => switchSub("visual");
+  btnPrompts.onclick = () => switchSub("prompts");
+  btnBatch.onclick = () => switchSub("batch");
+
+  switchSub(_activeGenSubtab);
+}
+
+async function renderVisual(body, song, state, health) {
 
   // ============ HERO: one-button generate ============
   const hero = el("section", { class: "gen-hero" });

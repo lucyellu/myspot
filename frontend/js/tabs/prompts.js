@@ -1,7 +1,7 @@
 import { api } from "../api.js";
 import { el, clear, toast, debounce } from "../util.js";
 
-export async function renderPrompts(body, song) {
+export async function renderPrompts(body, song, opts = {}) {
   clear(body);
 
   // ── Add new prompt form ───────────────────────────────────────────
@@ -104,6 +104,9 @@ export async function renderPrompts(body, song) {
         toast("Applied prompt copied to clipboard");
       } catch { toast("Could not copy to clipboard"); }
       api.markPromptUsed(p.id).catch(() => {});
+      if (typeof opts.onApply === "function") {
+        opts.onApply(applied, p);
+      }
     };
     const dup = el("button", { class: "btn", type: "button" }, "Duplicate");
     dup.onclick = () => {

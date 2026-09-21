@@ -1,10 +1,10 @@
-import { api } from "./api.js?v=lyric-export1";
+import { api } from "./api.js?v=radio-247-live1";
 import { renderHome } from "./views/home.js";
 import { renderWatch } from "./views/watch.js?v=lyric-export1";
 import { renderAssets } from "./views/assets.js";
-import { renderRadio } from "./views/radio.js?v=radio-onehour1";
+import { renderRadio } from "./views/radio.js?v=radio-247-live1";
 import { renderLiveBoards } from "./views/liveBoards.js?v=liveboards2";
-import { fmtAccount, channelColor, debounce, toast } from "./util.js";
+import { fmtAccount, channelColor, setChannelDisplayNames, debounce, toast } from "./util.js";
 import { bindThemePopover } from "./theme.js";
 import { initPersistentPlayer } from "./player.js?v=radio-longform1";
 
@@ -13,12 +13,14 @@ async function loadChannels() {
   const countEl = document.getElementById("drawer-channels-n");
   list.innerHTML = "";
   try {
-    const channels = await api.channels();
+    const allChannels = await api.channels();
+    const channels = allChannels.filter((c) => c.account !== "main" && c.account !== "sunosync");
+    setChannelDisplayNames(allChannels);
     if (countEl) countEl.textContent = String(channels.length);
     const all = document.createElement("a");
     all.href = "#/";
     all.dataset.account = "";
-    all.innerHTML = `All<span class="count">${channels.reduce((a, c) => a + c.song_count, 0).toLocaleString()}</span>`;
+    all.innerHTML = `<span class="channel-dot channel-dot-all">◈</span><span class="channel-label">All</span><span class="count">${channels.reduce((a, c) => a + c.song_count, 0).toLocaleString()}</span>`;
     list.append(all);
     for (const c of channels) {
       const a = document.createElement("a");
@@ -32,48 +34,227 @@ async function loadChannels() {
         sunoLink = `<a class="channel-suno-link" href="https://suno.com/@${c.suno_handle}" target="_blank" title="Open Suno profile @${c.suno_handle}" onclick="event.stopPropagation()">↗</a>`;
       }
 
-      a.innerHTML = `<span class="channel-dot" style="background:${color}"></span><span class="channel-label">${label}</span>${sunoLink}<span class="count">${c.song_count.toLocaleString()}</span>`;
+      let avatarHtml = `<span class="channel-dot" style="background:${color}"></span>`;
+      if (c.avatar_url) {
+        avatarHtml = `<img class="channel-avatar" src="${c.avatar_url}" alt="" loading="lazy" onerror="this.outerHTML='<span class=\\'channel-dot\\' style=\\'background:${color}\\'></span>'" />`;
+      }
 
-      // Double-click to rename
-      const labelEl = a.querySelector(".channel-label");
-      if (labelEl) {
-        labelEl.addEventListener("dblclick", (e) => {
+      a.innerHTML = `${avatarHtml}<span class="channel-label" title="${c.account}">${label}</span><button type="button" class="channel-rename-btn" title="Rename channel" aria-label="Rename channel">✎</button>${sunoLink}<span class="count">${c.song_count.toLocaleString()}</span>`;
+
+      const startRename = () => {
+        const labelEl = a.querySelector(".channel-label");
+        const renameBtn = a.querySelector(".channel-rename-btn");
+        if (!labelEl || a.querySelector(".channel-rename-input")) return;
+
+        if (renameBtn) renameBtn.style.display = "none";
+
+        const input = document.createElement("input");
+        input.type = "text";
+        input.className = "channel-rename-input";
+        input.value = c.display_name || c.account;
+        input.placeholder = c.account;
+        input.title = "Press Enter to save, Esc to cancel";
+
+        input.addEventListener("click", (e) => {
           e.preventDefault();
           e.stopPropagation();
-          const input = document.createElement("input");
-          input.type = "text";
-          input.className = "channel-rename-input";
-          input.value = c.display_name || c.account;
-          input.style.cssText = "width:80px;font-size:11px;padding:1px 4px;border:1px solid var(--accent-3);background:var(--bg);color:var(--fg);border-radius:3px";
-          labelEl.replaceWith(input);
-          input.focus();
-          input.select();
-          const commit = async () => {
-            const newName = input.value.trim();
-            // If cleared back to original account name or empty, clear custom name
-            const displayName = (newName && newName !== c.account) ? newName : "";
-            try {
-              await api.renameChannel(c.account, displayName);
-              toast(displayName ? `Renamed to "${displayName}"` : "Name reset");
-              loadChannels(); // refresh
-            } catch (err) {
-              toast("Rename failed: " + err.message);
-              loadChannels();
+        });
+        input.addEventListener("dblclick", (e) => {
+          e.preventDefault();
+          e.stopPropagation();
+        });
+
+        labelEl.replaceWith(input);
+        input.focus();
+        input.select();
+
+        let finished = false;
+
+        const commit = async () => {
+          if (finished) return;
+          finished = true;
+          const newName = input.value.trim();
+          // If cleared back to original account name or empty, clear custom name
+          const displayName = (newName && newName !== c.account) ? newName : "";
+          if (displayName === (c.display_name || "")) {
+            loadChannels();
+            return;
+          }
+          try {
+            await api.renameChannel(c.account, displayName);
+            toast(displayName ? `Renamed channel to "${displayName}"` : "Channel name reset");
+            await loadChannels();
+            if (_currentChannelAccount === c.account) {
+              route();
             }
-          };
-          input.addEventListener("keydown", (ke) => {
-            if (ke.key === "Enter") { ke.preventDefault(); commit(); }
-            if (ke.key === "Escape") { ke.preventDefault(); loadChannels(); }
-          });
-          input.addEventListener("blur", commit);
+          } catch (err) {
+            toast("Rename failed: " + err.message);
+            loadChannels();
+          }
+        };
+
+        const cancel = () => {
+          if (finished) return;
+          finished = true;
+          loadChannels();
+        };
+
+        input.addEventListener("keydown", (ke) => {
+          ke.stopPropagation();
+          if (ke.key === "Enter") {
+            ke.preventDefault();
+            commit();
+          } else if (ke.key === "Escape") {
+            ke.preventDefault();
+            cancel();
+          }
+        });
+
+        input.addEventListener("blur", () => {
+          if (!finished) commit();
+        });
+      };
+
+      const renameBtn = a.querySelector(".channel-rename-btn");
+      if (renameBtn) {
+        renameBtn.addEventListener("click", (e) => {
+          e.preventDefault();
+          e.stopPropagation();
+          startRename();
         });
       }
+
+      a.addEventListener("dblclick", (e) => {
+        e.preventDefault();
+        e.stopPropagation();
+        startRename();
+      });
 
       list.append(a);
     }
     highlightActiveChannel(_currentChannelAccount);
   } catch (e) {
     list.innerHTML = `<div class="muted">Failed to load channels: ${e.message}</div>`;
+  }
+}
+
+async function loadPlaylists() {
+  const list = document.getElementById("playlist-list");
+  const countEl = document.getElementById("drawer-playlists-n");
+  if (!list) return;
+  list.innerHTML = "";
+  try {
+    const playlists = await api.playlists();
+    if (countEl) countEl.textContent = String(playlists.length);
+    if (!playlists.length) {
+      list.innerHTML = `<div class="muted" style="padding:6px 10px">No playlists yet. Click + above to create one.</div>`;
+      return;
+    }
+    for (const p of playlists) {
+      const a = document.createElement("a");
+      a.href = `#/playlist/${p.id}`;
+      a.dataset.playlistId = String(p.id);
+
+      a.innerHTML = `
+        <span class="channel-dot" style="background:var(--accent)"></span>
+        <span class="channel-label" title="${p.name}">${p.name}</span>
+        <button type="button" class="channel-rename-btn" title="Rename playlist" aria-label="Rename playlist">✎</button>
+        <button type="button" class="channel-delete-btn" title="Delete playlist" aria-label="Delete playlist">×</button>
+        <span class="count">${p.song_count.toLocaleString()}</span>
+      `;
+
+      const startRename = () => {
+        const labelEl = a.querySelector(".channel-label");
+        const renameBtn = a.querySelector(".channel-rename-btn");
+        const delBtn = a.querySelector(".channel-delete-btn");
+        if (!labelEl || a.querySelector(".channel-rename-input")) return;
+
+        if (renameBtn) renameBtn.style.display = "none";
+        if (delBtn) delBtn.style.display = "none";
+
+        const input = document.createElement("input");
+        input.type = "text";
+        input.className = "channel-rename-input";
+        input.value = p.name;
+        input.title = "Press Enter to save, Esc to cancel";
+
+        input.addEventListener("click", (e) => { e.preventDefault(); e.stopPropagation(); });
+        input.addEventListener("dblclick", (e) => { e.preventDefault(); e.stopPropagation(); });
+
+        labelEl.replaceWith(input);
+        input.focus();
+        input.select();
+
+        let finished = false;
+        const commit = async () => {
+          if (finished) return;
+          finished = true;
+          const newName = input.value.trim();
+          if (!newName || newName === p.name) {
+            loadPlaylists();
+            return;
+          }
+          try {
+            await api.renamePlaylist(p.id, newName);
+            toast(`Renamed playlist to "${newName}"`);
+            await loadPlaylists();
+            if (location.hash === `#/playlist/${p.id}`) route();
+          } catch (err) {
+            toast("Rename failed: " + err.message);
+            loadPlaylists();
+          }
+        };
+
+        const cancel = () => {
+          if (finished) return;
+          finished = true;
+          loadPlaylists();
+        };
+
+        input.addEventListener("keydown", (ke) => {
+          ke.stopPropagation();
+          if (ke.key === "Enter") { ke.preventDefault(); commit(); }
+          else if (ke.key === "Escape") { ke.preventDefault(); cancel(); }
+        });
+
+        input.addEventListener("blur", () => { if (!finished) commit(); });
+      };
+
+      const renameBtn = a.querySelector(".channel-rename-btn");
+      if (renameBtn) {
+        renameBtn.onclick = (e) => {
+          e.preventDefault();
+          e.stopPropagation();
+          startRename();
+        };
+      }
+
+      const delBtn = a.querySelector(".channel-delete-btn");
+      if (delBtn) {
+        delBtn.onclick = async (e) => {
+          e.preventDefault();
+          e.stopPropagation();
+          if (!confirm(`Delete playlist "${p.name}"?`)) return;
+          try {
+            await api.deletePlaylist(p.id);
+            toast(`Deleted playlist "${p.name}"`);
+            await loadPlaylists();
+            if (location.hash === `#/playlist/${p.id}`) location.hash = "#/";
+          } catch (err) { toast("Delete failed: " + err.message); }
+        };
+      }
+
+      a.ondblclick = (e) => {
+        e.preventDefault();
+        e.stopPropagation();
+        startRename();
+      };
+
+      list.append(a);
+    }
+    highlightActivePlaylist();
+  } catch (e) {
+    list.innerHTML = `<div class="muted">Failed to load playlists: ${e.message}</div>`;
   }
 }
 
@@ -160,40 +341,63 @@ function highlightActiveChannel(account) {
   if (vLink) vLink.classList.toggle("active", location.hash === "#/videos");
 }
 
+function highlightActivePlaylist(id = null) {
+  const currentId = id !== null ? String(id) : (location.hash.startsWith("#/playlist/") ? location.hash.split("/")[2] : null);
+  const list = document.getElementById("playlist-list");
+  if (list) {
+    list.querySelectorAll("a").forEach((a) => {
+      a.classList.toggle("active", currentId !== null && a.dataset.playlistId === currentId);
+    });
+  }
+}
+
 async function route() {
   const hash = location.hash.replace(/^#/, "") || "/";
   const parts = hash.split("/").filter(Boolean);
   if (parts.length === 0) {
     highlightActiveChannel("");
+    highlightActivePlaylist(null);
     await renderHome();
   } else if (parts[0] === "videos") {
     highlightActiveChannel(null);
+    highlightActivePlaylist(null);
     await renderHome({ has_video: true });
+  } else if (parts[0] === "playlist" && parts[1]) {
+    highlightActiveChannel(null);
+    highlightActivePlaylist(parts[1]);
+    await renderHome({ playlist_id: parseInt(parts[1], 10) });
   } else if (parts[0] === "channel" && parts[1]) {
     const account = decodeURIComponent(parts[1]);
     highlightActiveChannel(account);
+    highlightActivePlaylist(null);
     await renderHome({ account });
   } else if (parts[0] === "song" && parts[1]) {
     await renderWatch(parseInt(parts[1], 10));
   } else if (parts[0] === "radio") {
     highlightActiveChannel(null);
+    highlightActivePlaylist(null);
     await renderRadio();
   } else if (parts[0] === "search" && parts[1]) {
     highlightActiveChannel(null);
+    highlightActivePlaylist(null);
     await renderHome({ q: decodeURIComponent(parts[1]) });
   } else if (parts[0] === "tag" && parts[1]) {
     highlightActiveChannel(null);
+    highlightActivePlaylist(null);
     await renderHome({ tag: decodeURIComponent(parts[1]) });
   } else if (parts[0] === "assets") {
     highlightActiveChannel(null);
+    highlightActivePlaylist(null);
     const folder = parts[1] ? decodeURIComponent(parts[1]) : null;
     await renderAssets({ folder });
   } else if (parts[0] === "live-boards") {
     highlightActiveChannel(null);
+    highlightActivePlaylist(null);
     const id = parts[1] ? decodeURIComponent(parts.slice(1).join("/")) : null;
     await renderLiveBoards({ id });
   } else {
     highlightActiveChannel("");
+    highlightActivePlaylist(null);
     await renderHome();
   }
 }
@@ -222,6 +426,25 @@ function bindGlobal() {
   };
   const radioLink = document.getElementById("topbar-radio");
   if (radioLink) radioLink.onclick = () => { location.hash = "#/radio"; };
+
+  const createPlBtn = document.getElementById("btn-create-playlist");
+  if (createPlBtn) {
+    createPlBtn.onclick = async (e) => {
+      e.preventDefault();
+      e.stopPropagation();
+      const name = prompt("Enter new playlist name:");
+      if (!name || !name.trim()) return;
+      try {
+        const created = await api.createPlaylist(name.trim());
+        toast(`Created playlist "${created.name}"`);
+        await loadPlaylists();
+        location.hash = `#/playlist/${created.id}`;
+      } catch (err) {
+        toast("Failed to create playlist: " + err.message);
+      }
+    };
+  }
+
   bindDrawerResize();
   document.getElementById("btn-reindex").onclick = async () => {
     if (!confirm("Re-scan suno_library/ and assets/? Takes ~2 minutes.")) return;
@@ -587,6 +810,7 @@ window.addEventListener("DOMContentLoaded", async () => {
   bindHelp();
   bindThemePopover();
   bindApiPopover();
-  await Promise.all([loadChannels(), loadAssetFolders(), loadSmartTags(), loadStats()]);
+  document.addEventListener("myspot:playlistschange", () => loadPlaylists());
+  await Promise.all([loadChannels(), loadPlaylists(), loadAssetFolders(), loadSmartTags(), loadStats()]);
   await route();
 });
