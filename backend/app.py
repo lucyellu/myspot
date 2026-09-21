@@ -17,7 +17,7 @@ from pathlib import Path  # noqa
 import httpx
 from fastapi import FastAPI, HTTPException, Query, Request, Body, UploadFile, File
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.responses import FileResponse, JSONResponse, StreamingResponse, RedirectResponse
+from fastapi.responses import FileResponse, JSONResponse, StreamingResponse, RedirectResponse, Response
 from fastapi.staticfiles import StaticFiles
 
 from . import config
