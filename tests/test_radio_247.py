@@ -97,3 +97,19 @@ def test_media_radio_voice_serving():
         r_voice = client.get(url)
         assert r_voice.status_code == 200
         assert len(r_voice.content) > 0
+
+
+def test_stream_endpoints():
+    client = TestClient(app)
+    r_head = client.head("/api/radio/stream.mp3")
+    assert r_head.status_code == 200
+    assert r_head.headers.get("content-type") == "audio/mpeg"
+
+    r_stream_head = client.head("/stream", follow_redirects=False)
+    assert r_stream_head.status_code in (302, 307)
+    assert r_stream_head.headers.get("location") == "/api/radio/stream.mp3"
+
+    r_meta = client.get("/api/radio/stream/meta")
+    assert r_meta.status_code == 200
+    assert r_meta.json().get("ok") is True
+
