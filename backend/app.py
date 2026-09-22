@@ -2997,7 +2997,9 @@ def index():
 @app.get("/radio")
 @app.get("/live")
 def live_radio():
-    page = FRONTEND_DIR / "live-radio.html"
+    page = FRONTEND_DIR / "radio.html"
+    if not page.exists():
+        page = FRONTEND_DIR / "live-radio.html"
     if not page.exists():
         page = FRONTEND_DIR / "index.html"
     return FileResponse(page, headers={"Cache-Control": "no-cache, no-store, must-revalidate"})
