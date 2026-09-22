@@ -1,14 +1,959 @@
-<!-- Alias to live-radio.html -->
 <!doctype html>
-<html>
+<html lang="en">
 <head>
 <meta charset="utf-8" />
-<meta http-equiv="refresh" content="0; url=/static/live-radio.html" />
-<title>Redirecting to myspot 24/7 AI Radio</title>
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+<title>myspot 24/7 AI Radio · Live</title>
+<link rel="icon" type="image/x-icon" href="/static/icon.ico" />
+<link rel="preconnect" href="https://fonts.googleapis.com" />
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=VT323&family=Space+Grotesk:wght@400;600;700&display=swap" />
+<script src="/static/config.js" onerror="this.remove()"></script>
+<script>
+  (function () {
+    var qs = new URLSearchParams(window.location.search);
+    var p = qs.get("api");
+    if (p) {
+      try { localStorage.setItem("myspot_api_base", p.replace(/\/$/, "")); } catch (_) {}
+      window.MYSPOT_API_BASE = p.replace(/\/$/, "");
+    } else {
+      var s = localStorage.getItem("myspot_api_base");
+      if (s) window.MYSPOT_API_BASE = s;
+      else if (window.location.hostname !== "localhost" && window.location.hostname !== "127.0.0.1") {
+        window.MYSPOT_API_BASE = "https://independent-completely-precious-jewish.trycloudflare.com";
+      }
+    }
+  })();
+</script>
+<style>
+  :root {
+    --bg: #0b0f0e;
+    --card: #131a18;
+    --card-border: #1f2a26;
+    --accent: #9fff52;
+    --accent-glow: rgba(159, 255, 82, 0.25);
+    --text: #e8f0eb;
+    --muted: #83978d;
+    --live-red: #ff4757;
+    --card-radius: 24px;
+  }
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  body {
+    background-color: var(--bg);
+    color: var(--text);
+    font-family: 'Space Grotesk', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+    min-height: 100vh;
+    min-height: 100dvh;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    padding: 16px 12px;
+    overflow-x: hidden;
+  }
+  .player-card {
+    background: var(--card);
+    border: 1px solid var(--card-border);
+    border-radius: var(--card-radius);
+    width: 100%;
+    max-width: 440px;
+    padding: 20px 18px;
+    box-shadow: 0 20px 50px rgba(0, 0, 0, 0.6), 0 0 40px var(--accent-glow);
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    position: relative;
+  }
+  .station-bar {
+    width: 100%;
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    margin-bottom: 12px;
+  }
+  .station-title {
+    font-family: 'VT323', monospace;
+    font-size: 26px;
+    letter-spacing: 2px;
+    color: var(--accent);
+    text-shadow: 0 0 10px var(--accent-glow);
+    line-height: 1;
+  }
+  .station-location {
+    font-size: 11px;
+    color: var(--muted);
+    letter-spacing: 0.5px;
+    margin-top: 2px;
+  }
+  .live-pill {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    background: rgba(255, 71, 87, 0.15);
+    border: 1px solid rgba(255, 71, 87, 0.3);
+    color: var(--live-red);
+    padding: 4px 10px;
+    border-radius: 999px;
+    font-size: 11px;
+    font-weight: 700;
+    letter-spacing: 1px;
+    text-transform: uppercase;
+    cursor: pointer;
+    transition: transform 0.15s, background 0.15s;
+  }
+  .live-pill:hover { transform: scale(1.04); background: rgba(255, 71, 87, 0.25); }
+  .live-pill::before {
+    content: '';
+    display: block;
+    width: 7px;
+    height: 7px;
+    background: var(--live-red);
+    border-radius: 50%;
+    animation: livePulse 1.5s infinite;
+  }
+  @keyframes livePulse {
+    0% { transform: scale(0.9); opacity: 0.8; }
+    50% { transform: scale(1.3); opacity: 1; box-shadow: 0 0 8px var(--live-red); }
+    100% { transform: scale(0.9); opacity: 0.8; }
+  }
+
+  /* Quick Vibe / Daypart Selector */
+  .vibe-row {
+    width: 100%;
+    display: flex;
+    gap: 6px;
+    overflow-x: auto;
+    padding: 4px 2px 10px 2px;
+    margin-bottom: 8px;
+    scrollbar-width: none;
+    -webkit-overflow-scrolling: touch;
+  }
+  .vibe-row::-webkit-scrollbar { display: none; }
+  .vibe-chip {
+    flex: 0 0 auto;
+    background: rgba(255, 255, 255, 0.05);
+    border: 1px solid var(--card-border);
+    color: var(--muted);
+    padding: 5px 11px;
+    border-radius: 999px;
+    font-size: 11px;
+    font-weight: 600;
+    cursor: pointer;
+    white-space: nowrap;
+    transition: all 0.15s ease;
+  }
+  .vibe-chip:hover { color: var(--text); background: rgba(255, 255, 255, 0.1); }
+  .vibe-chip.active {
+    background: rgba(159, 255, 82, 0.15);
+    color: var(--accent);
+    border-color: var(--accent);
+    box-shadow: 0 0 10px var(--accent-glow);
+  }
+
+  .daypart-badge {
+    background: rgba(159, 255, 82, 0.08);
+    color: var(--accent);
+    border: 1px solid rgba(159, 255, 82, 0.2);
+    padding: 5px 12px;
+    border-radius: 12px;
+    font-size: 12px;
+    font-weight: 600;
+    margin-bottom: 14px;
+    text-align: center;
+    max-width: 96%;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+  }
+
+  .cover-wrap {
+    width: 230px;
+    height: 230px;
+    max-width: 68vw;
+    max-height: 68vw;
+    border-radius: 20px;
+    background: #18221f;
+    border: 2px solid var(--card-border);
+    overflow: hidden;
+    position: relative;
+    box-shadow: 0 12px 30px rgba(0,0,0,0.5);
+    margin-bottom: 16px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    cursor: pointer;
+  }
+  .cover-art {
+    width: 100%;
+    height: 100%;
+    object-fit: cover;
+    transition: transform 0.3s ease;
+  }
+  .cover-wrap:hover .cover-art { transform: scale(1.03); }
+  .cover-fallback {
+    font-size: 56px;
+    color: var(--muted);
+  }
+
+  .track-meta {
+    width: 100%;
+    text-align: center;
+    margin-bottom: 14px;
+    padding: 0 4px;
+  }
+  .track-title {
+    font-size: 18px;
+    font-weight: 700;
+    line-height: 1.3;
+    margin-bottom: 4px;
+    color: #fff;
+    display: -webkit-box;
+    -webkit-line-clamp: 2;
+    -webkit-box-orient: vertical;
+    overflow: hidden;
+    cursor: pointer;
+  }
+  .track-artist {
+    font-size: 13px;
+    color: var(--muted);
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+  }
+
+  .eq-bar-wrap {
+    display: flex;
+    align-items: flex-end;
+    justify-content: center;
+    gap: 4px;
+    height: 20px;
+    margin-bottom: 14px;
+  }
+  .eq-bar {
+    width: 4px;
+    height: 4px;
+    background: var(--accent);
+    border-radius: 2px;
+    transition: height 0.15s ease;
+  }
+  .eq-bar-wrap.playing .eq-bar:nth-child(1) { animation: eqBounce 0.8s infinite alternate 0.1s; }
+  .eq-bar-wrap.playing .eq-bar:nth-child(2) { animation: eqBounce 0.7s infinite alternate 0.3s; }
+  .eq-bar-wrap.playing .eq-bar:nth-child(3) { animation: eqBounce 0.9s infinite alternate 0.0s; }
+  .eq-bar-wrap.playing .eq-bar:nth-child(4) { animation: eqBounce 0.6s infinite alternate 0.2s; }
+  .eq-bar-wrap.playing .eq-bar:nth-child(5) { animation: eqBounce 0.85s infinite alternate 0.4s; }
+  .eq-bar-wrap.playing .eq-bar:nth-child(6) { animation: eqBounce 0.75s infinite alternate 0.15s; }
+  @keyframes eqBounce {
+    0% { height: 4px; opacity: 0.4; }
+    100% { height: 18px; opacity: 1; }
+  }
+
+  /* Controls Row: Prev, Sync, Big Play, Next, Mute */
+  .controls-row {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 14px;
+    width: 100%;
+    margin-bottom: 12px;
+  }
+  .play-btn {
+    width: 68px;
+    height: 68px;
+    border-radius: 50%;
+    background: var(--accent);
+    border: none;
+    color: #0b0f0e;
+    font-size: 26px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    cursor: pointer;
+    box-shadow: 0 6px 24px var(--accent-glow);
+    transition: transform 0.15s ease, background 0.15s, box-shadow 0.15s;
+    user-select: none;
+    -webkit-tap-highlight-color: transparent;
+  }
+  .play-btn:hover { transform: scale(1.06); box-shadow: 0 8px 30px rgba(159, 255, 82, 0.4); }
+  .play-btn:active { transform: scale(0.94); }
+  .play-btn.ready-pulse {
+    animation: readyGlow 1.8s infinite;
+  }
+  @keyframes readyGlow {
+    0% { box-shadow: 0 0 10px var(--accent-glow); }
+    50% { box-shadow: 0 0 30px var(--accent); }
+    100% { box-shadow: 0 0 10px var(--accent-glow); }
+  }
+
+  .action-btn {
+    background: rgba(255, 255, 255, 0.07);
+    border: 1px solid var(--card-border);
+    color: var(--text);
+    width: 44px;
+    height: 44px;
+    border-radius: 50%;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    cursor: pointer;
+    font-size: 16px;
+    transition: all 0.15s;
+    user-select: none;
+    -webkit-tap-highlight-color: transparent;
+  }
+  .action-btn:hover { background: rgba(255, 255, 255, 0.14); color: var(--accent); }
+  .action-btn:active { transform: scale(0.92); }
+  .action-btn.muted-active {
+    color: var(--live-red);
+    border-color: rgba(255, 71, 87, 0.4);
+    background: rgba(255, 71, 87, 0.12);
+  }
+
+  /* Volume & Rundown bar */
+  .sub-controls {
+    width: 100%;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 12px;
+    padding: 4px 6px;
+    margin-bottom: 8px;
+  }
+  .vol-wrap {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    flex: 1;
+    max-width: 160px;
+  }
+  .vol-slider {
+    -webkit-appearance: none;
+    width: 100%;
+    height: 4px;
+    border-radius: 2px;
+    background: rgba(255, 255, 255, 0.15);
+    outline: none;
+    cursor: pointer;
+  }
+  .vol-slider::-webkit-slider-thumb {
+    -webkit-appearance: none;
+    width: 14px;
+    height: 14px;
+    border-radius: 50%;
+    background: var(--accent);
+    cursor: pointer;
+    box-shadow: 0 0 6px var(--accent-glow);
+  }
+  .vol-slider::-moz-range-thumb {
+    width: 14px;
+    height: 14px;
+    border-radius: 50%;
+    background: var(--accent);
+    border: none;
+    cursor: pointer;
+  }
+  .rundown-toggle-btn {
+    background: rgba(255, 255, 255, 0.05);
+    border: 1px solid var(--card-border);
+    color: var(--muted);
+    font-size: 11px;
+    font-weight: 600;
+    padding: 5px 12px;
+    border-radius: 8px;
+    cursor: pointer;
+    display: flex;
+    align-items: center;
+    gap: 5px;
+    transition: all 0.15s;
+  }
+  .rundown-toggle-btn:hover { color: var(--text); background: rgba(255, 255, 255, 0.1); }
+
+  /* Tracklist Drawer */
+  .rundown-drawer {
+    width: 100%;
+    max-height: 0;
+    overflow-y: auto;
+    transition: max-height 0.25s ease-out, margin 0.25s;
+    background: rgba(0, 0, 0, 0.25);
+    border-radius: 12px;
+    margin-bottom: 0;
+  }
+  .rundown-drawer.open {
+    max-height: 200px;
+    margin-bottom: 12px;
+    border: 1px solid var(--card-border);
+    padding: 6px;
+  }
+  .rundown-item {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding: 6px 10px;
+    border-radius: 8px;
+    font-size: 12px;
+    color: var(--muted);
+    cursor: pointer;
+    transition: background 0.12s, color 0.12s;
+  }
+  .rundown-item:hover { background: rgba(255, 255, 255, 0.06); color: var(--text); }
+  .rundown-item.active {
+    background: rgba(159, 255, 82, 0.12);
+    color: var(--accent);
+    font-weight: 600;
+  }
+  .rundown-item-title {
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    margin-right: 8px;
+  }
+
+  .footer-links {
+    margin-top: 8px;
+    display: flex;
+    gap: 16px;
+    font-size: 11px;
+    color: var(--muted);
+  }
+  .footer-links a, .footer-links button {
+    color: var(--muted);
+    text-decoration: none;
+    background: none;
+    border: none;
+    cursor: pointer;
+    font-family: inherit;
+    font-size: inherit;
+    transition: color 0.15s;
+  }
+  .footer-links a:hover, .footer-links button:hover { color: var(--accent); }
+
+  .status-toast {
+    position: fixed;
+    bottom: 20px;
+    background: #1e2824;
+    border: 1px solid var(--accent);
+    color: #fff;
+    padding: 8px 16px;
+    border-radius: 20px;
+    font-size: 12px;
+    opacity: 0;
+    transform: translateY(10px);
+    transition: opacity 0.25s, transform 0.25s;
+    pointer-events: none;
+    z-index: 100;
+  }
+  .status-toast.show { opacity: 1; transform: translateY(0); }
+</style>
 </head>
 <body>
-<script>
-  window.location.replace("/static/live-radio.html" + window.location.search + window.location.hash);
+
+<main class="player-card" id="player-card">
+  <header class="station-bar">
+    <div>
+      <div class="station-title">MYSPOT FM</div>
+      <div class="station-location" id="station-location">Vancouver, Canada</div>
+    </div>
+    <div class="live-pill" id="live-indicator" title="Snap to Live 24/7 Broadcast">LIVE 24/7</div>
+  </header>
+
+  <!-- Quick Daypart / Vibe Selector -->
+  <div class="vibe-row" id="vibe-row" role="tablist" aria-label="Dayparts">
+    <button class="vibe-chip active" data-daypart="live" type="button">🔴 Live</button>
+    <button class="vibe-chip" data-daypart="morning" type="button">🌅 Morning</button>
+    <button class="vibe-chip" data-daypart="midday" type="button">☕ Midday</button>
+    <button class="vibe-chip" data-daypart="afternoon" type="button">⚡ Afternoon</button>
+    <button class="vibe-chip" data-daypart="evening" type="button">🌆 Golden Hour</button>
+    <button class="vibe-chip" data-daypart="late-night" type="button">🌌 Cosmic FM</button>
+    <button class="vibe-chip" data-daypart="overnight" type="button">🌙 Overnight</button>
+  </div>
+
+  <div class="daypart-badge" id="daypart-badge">Connecting to station signal...</div>
+
+  <div class="cover-wrap" id="cover-wrap" title="Click to Play / Pause">
+    <img id="cover-art" class="cover-art" src="" alt="Album Art" hidden />
+    <div id="cover-fallback" class="cover-fallback">♫</div>
+  </div>
+
+  <div class="track-meta">
+    <h1 class="track-title" id="track-title" title="Current track">myspot 24/7 Radio</h1>
+    <div class="track-artist" id="track-artist">Live from Vancouver vault</div>
+  </div>
+
+  <div class="eq-bar-wrap" id="eq-wrap">
+    <span class="eq-bar"></span>
+    <span class="eq-bar"></span>
+    <span class="eq-bar"></span>
+    <span class="eq-bar"></span>
+    <span class="eq-bar"></span>
+    <span class="eq-bar"></span>
+  </div>
+
+  <!-- Primary Controls: Prev, Re-sync, Play/Pause, Next, Mute -->
+  <div class="controls-row">
+    <button class="action-btn" id="prev-btn" title="Previous Track (←)" aria-label="Previous">⏮</button>
+    <button class="action-btn" id="resync-btn" title="Re-sync with Live Broadcast (L)" aria-label="Re-sync">⟳</button>
+    <button class="play-btn ready-pulse" id="play-btn" title="Play / Pause (Space)" aria-label="Play">▶</button>
+    <button class="action-btn" id="next-btn" title="Next Track (→)" aria-label="Next">⏭</button>
+    <button class="action-btn" id="mute-btn" title="Mute / Unmute (M)" aria-label="Mute">🔊</button>
+  </div>
+
+  <!-- Volume & Rundown Drawer Toggle -->
+  <div class="sub-controls">
+    <div class="vol-wrap">
+      <span style="font-size: 12px; color: var(--muted);" id="vol-icon">🔉</span>
+      <input type="range" class="vol-slider" id="vol-slider" min="0" max="1" step="0.05" value="1" title="Volume" aria-label="Volume" />
+    </div>
+    <button class="rundown-toggle-btn" id="rundown-toggle" type="button">
+      <span>📋 Tracklist</span>
+      <span id="rundown-count" style="opacity: 0.7;"></span>
+    </button>
+  </div>
+
+  <!-- Expandable Tracklist Drawer -->
+  <div class="rundown-drawer" id="rundown-drawer">
+    <div id="rundown-list"></div>
+  </div>
+
+  <div class="footer-links">
+    <button type="button" id="copy-stream-btn">Copy Stream URL</button>
+    <span>·</span>
+    <a href="/#/radio" id="full-app-link">Desktop Tuner ↗</a>
+  </div>
+</main>
+
+<audio id="station-audio" preload="auto"></audio>
+<audio id="voice-audio" preload="auto"></audio>
+
+<div class="status-toast" id="toast"></div>
+
+<script type="module">
+  const CACHE_KEY = "myspot_radio_cache_v2";
+  const BASE = window.MYSPOT_API_BASE || "";
+  const audio = document.getElementById("station-audio");
+  const voice = document.getElementById("voice-audio");
+  const playBtn = document.getElementById("play-btn");
+  const prevBtn = document.getElementById("prev-btn");
+  const nextBtn = document.getElementById("next-btn");
+  const resyncBtn = document.getElementById("resync-btn");
+  const muteBtn = document.getElementById("mute-btn");
+  const volSlider = document.getElementById("vol-slider");
+  const volIcon = document.getElementById("vol-icon");
+  const coverWrap = document.getElementById("cover-wrap");
+  const daypartBadge = document.getElementById("daypart-badge");
+  const trackTitle = document.getElementById("track-title");
+  const trackArtist = document.getElementById("track-artist");
+  const coverArt = document.getElementById("cover-art");
+  const coverFallback = document.getElementById("cover-fallback");
+  const eqWrap = document.getElementById("eq-wrap");
+  const copyStreamBtn = document.getElementById("copy-stream-btn");
+  const toastEl = document.getElementById("toast");
+  const vibeRow = document.getElementById("vibe-row");
+  const liveIndicator = document.getElementById("live-indicator");
+  const rundownToggle = document.getElementById("rundown-toggle");
+  const rundownDrawer = document.getElementById("rundown-drawer");
+  const rundownList = document.getElementById("rundown-list");
+  const rundownCount = document.getElementById("rundown-count");
+
+  let liveState = null;
+  let showSegments = [];
+  let currentIdx = 0;
+  let isPlaying = false;
+  let activeDaypartId = "live";
+
+  function toast(msg) {
+    toastEl.textContent = msg;
+    toastEl.classList.add("show");
+    setTimeout(() => toastEl.classList.remove("show"), 2200);
+  }
+
+  function mediaUrl(type, id) {
+    return `${BASE}/media/${type}/${id}`;
+  }
+
+  async function apiGet(path) {
+    const res = await fetch(BASE + path);
+    if (!res.ok) throw new Error(`HTTP ${res.status}`);
+    return res.json();
+  }
+
+  // Restore Instant Cache on frame 0
+  function restoreCachedUI() {
+    try {
+      const raw = localStorage.getItem(CACHE_KEY);
+      if (!raw) return;
+      const cached = JSON.parse(raw);
+      if (cached.title) trackTitle.textContent = cached.title;
+      if (cached.artist) trackArtist.textContent = cached.artist;
+      if (cached.badge) daypartBadge.textContent = cached.badge;
+      if (cached.coverSrc) {
+        coverArt.src = cached.coverSrc;
+        coverArt.hidden = false;
+        coverFallback.hidden = true;
+      }
+      if (cached.songSrc && !audio.src) {
+        audio.src = cached.songSrc;
+        audio.load();
+      }
+    } catch (_) {}
+  }
+
+  function saveCachedUI(seg, song, badgeText) {
+    try {
+      const data = {
+        title: seg?.title || song?.title || "myspot Song",
+        artist: song?.account ? song.account.replace(/^sunosync_?/, "") : "myspot Radio",
+        badge: badgeText,
+        coverSrc: song?.id ? mediaUrl("cover", song.id) : null,
+        songSrc: song?.id ? mediaUrl("audio", song.id) : null,
+      };
+      localStorage.setItem(CACHE_KEY, JSON.stringify(data));
+    } catch (_) {}
+  }
+
+  function updateBadge(state) {
+    const dp = state.daypart || {};
+    const wx = state.weather;
+    let wxText = "";
+    if (wx && wx.temperature_c != null) {
+      wxText = ` · ${Math.round(wx.temperature_c)}°C ${wx.summary || ""}`;
+    }
+    const clockText = state.clock ? ` · ${state.clock}` : "";
+    const badgeText = `✦ ${dp.label || "Live Station"}${clockText}${wxText}`;
+    daypartBadge.textContent = badgeText;
+
+    if (state.place) {
+      const locEl = document.getElementById("station-location");
+      if (locEl) locEl.textContent = state.place;
+    }
+    return badgeText;
+  }
+
+  function renderRundown() {
+    rundownList.innerHTML = "";
+    if (!showSegments.length) {
+      rundownCount.textContent = "";
+      return;
+    }
+    const songCount = showSegments.filter(s => s.type === "song").length;
+    rundownCount.textContent = `(${songCount})`;
+
+    showSegments.forEach((seg, idx) => {
+      const item = document.createElement("div");
+      item.className = `rundown-item ${idx === currentIdx ? "active" : ""}`;
+      
+      const titleSpan = document.createElement("span");
+      titleSpan.className = "rundown-item-title";
+      const icon = seg.type === "talk" ? "🎙 " : "♫ ";
+      titleSpan.textContent = `${icon}${seg.title || "Untitled"}`;
+      
+      const durSpan = document.createElement("span");
+      durSpan.style.opacity = "0.7";
+      const mins = Math.floor((seg.duration || 180) / 60);
+      const secs = Math.floor((seg.duration || 180) % 60);
+      durSpan.textContent = `${mins}:${secs < 10 ? "0" : ""}${secs}`;
+
+      item.append(titleSpan, durSpan);
+      item.onclick = (e) => {
+        e.stopPropagation();
+        loadSegment(idx, 0);
+        if (!isPlaying) togglePlay();
+        toast(`Playing: ${seg.title}`);
+      };
+      rundownList.append(item);
+    });
+  }
+
+  async function syncLiveStation() {
+    try {
+      activeDaypartId = "live";
+      updateVibeChips();
+      liveState = await apiGet("/api/radio/live");
+      if (!liveState || !liveState.show) return;
+
+      const badgeText = updateBadge(liveState);
+      showSegments = liveState.show.segments || [];
+      currentIdx = liveState.currentSegmentIndex || 0;
+
+      renderRundown();
+      await loadSegment(currentIdx, liveState.segmentOffset || 0, badgeText);
+    } catch (err) {
+      console.warn("Live sync error:", err);
+      daypartBadge.textContent = "Reconnecting to live station...";
+    }
+  }
+
+  async function selectDaypart(daypartId) {
+    if (daypartId === "live") {
+      toast("Syncing with live 24/7 broadcast...");
+      await syncLiveStation();
+      if (isPlaying) togglePlay();
+      return;
+    }
+
+    try {
+      activeDaypartId = daypartId;
+      updateVibeChips();
+      toast(`Loading ${daypartId.replace("-", " ")} vibe...`);
+      daypartBadge.textContent = `✦ Loading ${daypartId}...`;
+
+      const res = await fetch(`${BASE}/api/radio/shows/daypart`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ daypart: daypartId, place: "Vancouver, Canada" })
+      });
+      if (!res.ok) throw new Error(`HTTP ${res.status}`);
+      const show = await res.json();
+      if (!show || !show.segments) throw new Error("No segments");
+
+      showSegments = show.segments;
+      currentIdx = 0;
+      daypartBadge.textContent = `✦ ${show.title || daypartId.toUpperCase()}`;
+      renderRundown();
+      await loadSegment(0, 0, daypartBadge.textContent);
+      if (!isPlaying) {
+        togglePlay();
+      }
+    } catch (err) {
+      console.warn("Daypart switch error:", err);
+      toast(`Could not switch vibe: ${err.message || err}`);
+    }
+  }
+
+  function updateVibeChips() {
+    vibeRow.querySelectorAll(".vibe-chip").forEach(chip => {
+      chip.classList.toggle("active", chip.dataset.daypart === activeDaypartId);
+    });
+  }
+
+  async function loadSegment(idx, offset = 0, customBadgeText = null) {
+    if (!showSegments.length || idx >= showSegments.length) {
+      await syncLiveStation();
+      return;
+    }
+    currentIdx = idx;
+    const seg = showSegments[idx];
+
+    // Highlight in rundown drawer
+    rundownList.querySelectorAll(".rundown-item").forEach((item, i) => {
+      item.classList.toggle("active", i === idx);
+    });
+
+    // Stop currently playing voice
+    voice.pause();
+    voice.removeAttribute("src");
+
+    if (seg.type === "talk") {
+      audio.pause();
+      trackTitle.textContent = seg.title || "Station Voice Break";
+      trackArtist.textContent = `Host · ${seg.host || "myspot DJ"}`;
+      coverArt.hidden = true;
+      coverFallback.hidden = false;
+      coverFallback.textContent = "🎙";
+
+      updateMediaSession(seg.title, `Host (${seg.host || "myspot"})`, null);
+
+      if (seg.audio_url) {
+        voice.src = BASE + seg.audio_url;
+        if (isPlaying) {
+          try { await voice.play(); } catch (_) {}
+        }
+      } else {
+        if (isPlaying && "speechSynthesis" in window) {
+          const u = new SpeechSynthesisUtterance(seg.text);
+          u.onend = advanceNext;
+          window.speechSynthesis.speak(u);
+        }
+      }
+    } else if (seg.type === "song") {
+      const song = seg.song || {};
+      trackTitle.textContent = song.title || seg.title || "myspot Song";
+      trackArtist.textContent = song.account ? song.account.replace(/^sunosync_?/, "") : "myspot Radio";
+
+      const coverSrc = song.id ? mediaUrl("cover", song.id) : null;
+      if (coverSrc) {
+        coverArt.src = coverSrc;
+        coverArt.hidden = false;
+        coverFallback.hidden = true;
+      } else {
+        coverArt.hidden = true;
+        coverFallback.hidden = false;
+        coverFallback.textContent = "♫";
+      }
+
+      saveCachedUI(seg, song, customBadgeText || daypartBadge.textContent);
+      updateMediaSession(song.title, song.account, coverSrc);
+
+      const songSrc = mediaUrl("audio", song.id);
+      if (audio.src !== songSrc) {
+        audio.src = songSrc;
+      }
+
+      if (offset > 0) {
+        const applyOffset = () => {
+          try {
+            audio.currentTime = Math.min(offset, (song.duration || 180) - 1);
+          } catch (_) {}
+        };
+        if (audio.readyState >= 1) {
+          applyOffset();
+        } else {
+          audio.addEventListener("loadedmetadata", applyOffset, { once: true });
+        }
+      }
+
+      if (isPlaying) {
+        try { await audio.play(); } catch (_) {}
+      }
+    }
+  }
+
+  function advanceNext() {
+    loadSegment(currentIdx + 1, 0);
+  }
+
+  function advancePrev() {
+    loadSegment(Math.max(0, currentIdx - 1), 0);
+  }
+
+  audio.onended = advanceNext;
+  voice.onended = advanceNext;
+
+  function updateMediaSession(title, artist, artworkUrl) {
+    if ("mediaSession" in navigator) {
+      const dp = liveState?.daypart?.label || "Live";
+      navigator.mediaSession.metadata = new MediaMetadata({
+        title: title || "myspot 24/7 AI Radio",
+        artist: artist || "myspot FM",
+        album: `myspot FM · ${dp}`,
+        artwork: artworkUrl ? [{ src: artworkUrl, sizes: "512x512", type: "image/jpeg" }] : []
+      });
+      navigator.mediaSession.setActionHandler("play", togglePlay);
+      navigator.mediaSession.setActionHandler("pause", togglePlay);
+      navigator.mediaSession.setActionHandler("nexttrack", advanceNext);
+      navigator.mediaSession.setActionHandler("previoustrack", advancePrev);
+    }
+  }
+
+  // Toggle Play / Pause synchronously for instant user feedback
+  async function togglePlay() {
+    if (isPlaying) {
+      isPlaying = false;
+      audio.pause();
+      voice.pause();
+      if ("speechSynthesis" in window) window.speechSynthesis.cancel();
+      playBtn.textContent = "▶";
+      playBtn.classList.add("ready-pulse");
+      eqWrap.classList.remove("playing");
+    } else {
+      isPlaying = true;
+      playBtn.textContent = "⏸";
+      playBtn.classList.remove("ready-pulse");
+      eqWrap.classList.add("playing");
+
+      const seg = showSegments[currentIdx];
+      try {
+        if (seg?.type === "talk" && voice.src) {
+          await voice.play();
+        } else if (seg?.type === "song" && audio.src) {
+          await audio.play();
+        } else {
+          // If no track loaded yet, start audio element and sync
+          if (audio.src) audio.play();
+          await syncLiveStation();
+          if (showSegments[currentIdx]?.type === "song") await audio.play();
+        }
+      } catch (err) {
+        console.warn("Playback error:", err);
+      }
+    }
+  }
+
+  // Instant Mute / Unmute
+  function toggleMute() {
+    const isMuted = !audio.muted;
+    audio.muted = isMuted;
+    voice.muted = isMuted;
+    muteBtn.textContent = isMuted ? "🔇" : "🔊";
+    muteBtn.classList.toggle("muted-active", isMuted);
+    volIcon.textContent = isMuted ? "🔇" : (audio.volume < 0.5 ? "🔉" : "🔊");
+    toast(isMuted ? "Muted" : "Unmuted");
+  }
+
+  // Volume slider
+  volSlider.oninput = (e) => {
+    const val = parseFloat(e.target.value);
+    audio.volume = val;
+    voice.volume = val;
+    if (val === 0) {
+      audio.muted = true;
+      voice.muted = true;
+      muteBtn.textContent = "🔇";
+      muteBtn.classList.add("muted-active");
+      volIcon.textContent = "🔇";
+    } else {
+      audio.muted = false;
+      voice.muted = false;
+      muteBtn.textContent = "🔊";
+      muteBtn.classList.remove("muted-active");
+      volIcon.textContent = val < 0.5 ? "🔉" : "🔊";
+    }
+  };
+
+  // Keyboard Shortcuts
+  window.addEventListener("keydown", (e) => {
+    if (e.target.tagName === "INPUT" || e.target.tagName === "TEXTAREA") return;
+    if (e.code === "Space") {
+      e.preventDefault();
+      togglePlay();
+    } else if (e.key === "m" || e.key === "M") {
+      toggleMute();
+    } else if (e.code === "ArrowRight") {
+      advanceNext();
+    } else if (e.code === "ArrowLeft") {
+      advancePrev();
+    } else if (e.key === "l" || e.key === "L") {
+      syncLiveStation();
+    }
+  });
+
+  // Wiring Click Handlers
+  playBtn.onclick = togglePlay;
+  coverWrap.onclick = togglePlay;
+  prevBtn.onclick = advancePrev;
+  nextBtn.onclick = advanceNext;
+  muteBtn.onclick = toggleMute;
+  resyncBtn.onclick = async () => {
+    toast("Re-syncing with 24/7 live station...");
+    await syncLiveStation();
+  };
+  liveIndicator.onclick = () => selectDaypart("live");
+
+  // Vibe Chips selector
+  vibeRow.onclick = (e) => {
+    const chip = e.target.closest(".vibe-chip");
+    if (!chip) return;
+    selectDaypart(chip.dataset.daypart);
+  };
+
+  // Tracklist Drawer Toggle
+  rundownToggle.onclick = () => {
+    rundownDrawer.classList.toggle("open");
+  };
+
+  copyStreamBtn.onclick = async () => {
+    const streamUrl = `${BASE || window.location.origin}/api/radio/stream.mp3`;
+    try {
+      await navigator.clipboard.writeText(streamUrl);
+      toast("Stream URL copied! Works in VLC, CarPlay, Sonos.");
+    } catch (_) {
+      prompt("Copy live stream URL:", streamUrl);
+    }
+  };
+
+  // 1. Instant Cache Hydration (0ms)
+  restoreCachedUI();
+
+  // 2. Fetch Live Station in background
+  syncLiveStation();
 </script>
 </body>
 </html>

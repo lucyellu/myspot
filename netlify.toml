@@ -24,12 +24,17 @@
 # Standalone radio player routes
 [[redirects]]
   from = "/radio"
-  to = "/live-radio.html"
+  to = "/radio.html"
   status = 200
 
 [[redirects]]
   from = "/live"
-  to = "/live-radio.html"
+  to = "/radio.html"
+  status = 200
+
+[[redirects]]
+  from = "/live-radio"
+  to = "/radio.html"
   status = 200
 
 # SPA fallback: any unknown path (other than /api/*) returns index.html so
